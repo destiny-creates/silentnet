@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SilentNet — Login [RECONSTRUCTED]</title>
+    <!-- RECONSTRUCTED from /static/css/auth.css, /static/css/style.css -->
+    <!-- Actual page served at https://thisisafalsepositive.st/auth/login -->
+    <!-- IP-allowlisted — accessible only from operator IP range -->
+    <link rel="stylesheet" href="/static/css/style.css">
+    <link rel="stylesheet" href="/static/css/auth.css">
+</head>
+<body>
+    <!-- .auth-container: fullscreen centered flex -->
+    <div class="auth-container">
+        <!-- .auth-card: 440px card, neon border shimmer animation -->
+        <!-- ::before: animated gradient top border (blue->purple->pink->red) -->
+        <!-- ::after: animated bottom border shimmer -->
+        <div class="auth-card">
+
+            <!-- .auth-header: centered logo + title -->
+            <div class="auth-header">
+                <!-- .auth-logo: SVG icon (red/accent colored) + brand name text -->
+                <a href="/" class="auth-logo">
+                    <svg><!-- accent colored icon, drop-shadow glow --></svg>
+                    <!-- gradient text: accent -> neon-pink, font-weight 700 -->
+                    <span>SilentNet</span>
+                </a>
+
+                <!-- .auth-title: gradient text accent->pink->purple -->
+                <h1 class="auth-title">Welcome Back<span></span></h1>
+
+                <!-- .auth-subtitle: text-secondary, 14px -->
+                <p class="auth-subtitle">Sign in to your account to continue</p>
+            </div>
+
+            <!-- PRIMARY LOGIN: Discord OAuth (btn-discord) -->
+            <!-- Blue gradient #5865F2 -> #7983ff, box-shadow discord glow -->
+            <a href="/auth/discord" class="btn btn-discord btn-full">
+                <svg><!-- Discord SVG icon 20x20 --></svg>
+                Continue with Discord
+            </a>
+
+            <!-- .auth-divider: "OR" with gradient lines either side -->
+            <div class="auth-divider">or</div>
+
+            <!-- SECONDARY: Username/password form -->
+            <form method="POST" action="/auth/login">
+                <!-- CSRF token (Flask-WTF or custom) -->
+                <input type="hidden" name="csrf_token" value="...">
+
+                <div class="form-group">
+                    <label class="form-label">Username</label>
+                    <input class="form-input" type="text" name="username"
+                           placeholder="Enter username" autocomplete="username">
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">Password</label>
+                    <input class="form-input" type="password" name="password"
+                           placeholder="Enter password" autocomplete="current-password">
+                </div>
+
+                <!-- Alert area for error messages -->
+                <!-- <div class="alert alert-danger">Invalid credentials</div> -->
+
+                <button type="submit" class="btn btn-primary btn-full">Sign In</button>
+            </form>
+
+            <!-- .auth-toggle: secondary toggle (register/forgot?) -->
+            <button class="auth-toggle">Forgot password?</button>
+
+            <!-- .auth-footer: links, border-top, gradient overlay -->
+            <div class="auth-footer">
+                <a href="/auth/discord">Sign in with Discord</a>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast notification system (app.js) -->
+    <!-- window.Toast.success/warning/error() -->
+    <script src="/static/js/app.js"></script>
+</body>
+</html>

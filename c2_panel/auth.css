@@ -1,0 +1,275 @@
+body {
+    overflow: auto;
+}
+
+.auth-container {
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 40px 20px;
+    position: relative;
+    z-index: 1;
+}
+
+.auth-card {
+    width: 100%;
+    max-width: 440px;
+    background: var(--bg-secondary);
+    border: 1px solid rgba(100, 150, 255, 0.15);
+    border-radius: var(--radius-lg);
+    padding: 44px;
+    position: relative;
+    box-shadow:
+        var(--shadow-lg),
+        0 0 80px -15px rgba(0, 170, 255, 0.15),
+        0 0 120px -20px rgba(255, 34, 85, 0.12);
+    overflow: hidden;
+}
+
+.auth-card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 3px;
+    background: linear-gradient(
+        90deg,
+        transparent 0%,
+        var(--neon-blue) 15%,
+        var(--neon-purple) 30%,
+        var(--neon-pink) 45%,
+        var(--accent) 55%,
+        var(--neon-pink) 65%,
+        var(--neon-purple) 80%,
+        var(--neon-blue) 90%,
+        transparent 100%
+    );
+    background-size: 200% 100%;
+    box-shadow: 0 0 20px rgba(255, 34, 85, 0.5), 0 2px 15px rgba(255, 68, 170, 0.3);
+    animation: borderShimmer 4s ease-in-out infinite;
+}
+
+@keyframes borderShimmer {
+    0% {
+        background-position: 100% 0;
+        box-shadow: 0 0 20px rgba(0, 170, 255, 0.5), 0 2px 15px rgba(0, 170, 255, 0.3);
+    }
+    50% {
+        background-position: 0% 0;
+        box-shadow: 0 0 25px rgba(255, 34, 85, 0.6), 0 2px 20px rgba(255, 68, 170, 0.4);
+    }
+    100% {
+        background-position: 100% 0;
+        box-shadow: 0 0 20px rgba(0, 170, 255, 0.5), 0 2px 15px rgba(0, 170, 255, 0.3);
+    }
+}
+
+.auth-card::after {
+    content: '';
+    position: absolute;
+    bottom: 0;
+    left: 15%;
+    right: 15%;
+    height: 1px;
+    background: linear-gradient(
+        90deg,
+        transparent 0%,
+        rgba(0, 170, 255, 0.4) 25%,
+        rgba(170, 85, 255, 0.4) 50%,
+        rgba(255, 68, 170, 0.3) 75%,
+        transparent 100%
+    );
+    background-size: 200% 100%;
+    animation: borderShimmerBottom 5s ease-in-out infinite reverse;
+}
+
+@keyframes borderShimmerBottom {
+    0% {
+        background-position: 100% 0;
+    }
+    50% {
+        background-position: 0% 0;
+    }
+    100% {
+        background-position: 100% 0;
+    }
+}
+
+.auth-header {
+    text-align: center;
+    margin-bottom: 36px;
+}
+
+.auth-logo {
+    display: inline-flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 28px;
+    text-decoration: none;
+    color: var(--text-primary);
+}
+
+.auth-logo svg {
+    width: 38px;
+    height: 38px;
+    color: var(--accent);
+    filter: drop-shadow(0 0 15px rgba(255, 34, 85, 0.6));
+}
+
+.auth-logo span {
+    font-size: 22px;
+    font-weight: 700;
+    letter-spacing: -0.3px;
+    background: linear-gradient(135deg, var(--accent) 0%, var(--neon-pink) 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    filter: drop-shadow(0 0 20px rgba(255, 34, 85, 0.4));
+}
+
+.auth-title {
+    font-size: 24px;
+    font-weight: 700;
+    margin-bottom: 8px;
+    letter-spacing: -0.3px;
+    background: linear-gradient(135deg, var(--accent) 0%, var(--neon-pink) 50%, var(--neon-purple) 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    filter: drop-shadow(0 0 15px rgba(255, 68, 170, 0.4));
+}
+
+.auth-title span {
+    background: linear-gradient(135deg, var(--neon-pink) 0%, var(--neon-blue) 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    filter: drop-shadow(0 0 15px rgba(0, 170, 255, 0.4));
+}
+
+.auth-subtitle {
+    color: var(--text-secondary);
+    font-size: 14px;
+}
+
+.auth-divider {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin: 24px 0;
+    color: var(--text-muted);
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.auth-divider::before,
+.auth-divider::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--border-color), transparent);
+}
+
+.auth-footer {
+    text-align: center;
+    margin-top: 28px;
+    padding-top: 24px;
+    border-top: 1px solid var(--border-color);
+    font-size: 14px;
+    color: var(--text-secondary);
+    position: relative;
+}
+
+.auth-footer::before {
+    content: '';
+    position: absolute;
+    top: -1px;
+    left: 10%;
+    right: 10%;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(0, 170, 255, 0.25), rgba(170, 85, 255, 0.15), transparent);
+}
+
+.auth-footer a {
+    color: var(--accent);
+    text-decoration: none;
+    font-weight: 600;
+    transition: all 0.2s;
+    text-shadow: 0 0 12px rgba(255, 34, 85, 0.4);
+}
+
+.auth-footer a:hover {
+    text-shadow: 0 0 20px rgba(255, 34, 85, 0.6);
+    text-decoration: underline;
+}
+
+.auth-toggle {
+    display: block;
+    width: 100%;
+    margin-top: 16px;
+    padding: 12px;
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    font-family: inherit;
+    font-size: 13px;
+    cursor: pointer;
+    border-radius: var(--radius-sm);
+    transition: all 0.2s ease;
+}
+
+.auth-toggle:hover {
+    color: var(--text-secondary);
+    background: rgba(0, 170, 255, 0.08);
+    text-shadow: 0 0 12px rgba(0, 170, 255, 0.3);
+}
+
+.btn-discord {
+    background: linear-gradient(135deg, #5865F2, #7983ff);
+    color: white;
+    width: 100%;
+    justify-content: center;
+    border-radius: var(--radius-md);
+    box-shadow: 0 2px 15px rgba(88, 101, 242, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.15);
+}
+
+.btn-discord:hover {
+    background: linear-gradient(135deg, #4752C4, #5865F2);
+    transform: translateY(-2px);
+    box-shadow: 0 6px 30px rgba(88, 101, 242, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.2);
+}
+
+.btn-discord:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+    transform: none;
+}
+
+.btn-discord svg {
+    width: 20px;
+    height: 20px;
+}
+
+.btn-full {
+    width: 100%;
+    justify-content: center;
+}
+
+@media (max-width: 480px) {
+    .auth-card {
+        padding: 32px 24px;
+    }
+    .auth-logo svg {
+        width: 32px;
+        height: 32px;
+    }
+    .auth-logo span {
+        font-size: 19px;
+    }
+    .auth-title {
+        font-size: 20px;
+    }
+}
