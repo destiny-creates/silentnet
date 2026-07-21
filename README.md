@@ -1064,14 +1064,15 @@ The two domains serve entirely different functions within the MaaS architecture:
 
 ### silentnet.st Vulnerabilities
 
-| ID | Title | Severity | Notes |
-|---|---|---|---|
-| VULN-S01 | No Authentication on Admin Routes | HIGH | All /dashboard/* serve login SPA without session check |
-| VULN-S02 | SSRF via webhookSignup Endpoint | HIGH | User-supplied URL POSTed to by server |
-| VULN-S03 | No Rate Limiting on /auth/login | MEDIUM | JSON login, no CSRF, no visible throttling |
-| VULN-S04 | Open Redirect Risk via initialState | MEDIUM | Base64 state param controls post-OAuth redirect |
-| VULN-S05 | nginx Static File Exposure | MEDIUM | Same as VULN-04 on .191 |
-| VULN-S06 | No Invite Gate on /auth/signup | INFO | Anyone can register as a MaaS operator |
+| ID | Title | Severity | Status | Notes |
+|---|---|---|---|---|
+| VULN-S01 | No Auth on Admin Routes | HIGH | Confirmed | All /dashboard/* publicly accessible |
+| VULN-S02 | SSRF via webhookSignup | N/A | Not viable | Server validates Discord webhook URL format |
+| VULN-S03 | No Rate Limiting on /auth/login | MEDIUM | Confirmed | 15/15 attempts, no 429, no lockout |
+| VULN-S04 | Open Redirect via initialState | N/A | Not confirmed | Redirect handled client-side only |
+| VULN-S05 | nginx Static File Exposure | MEDIUM | Confirmed | Same as VULN-04 on thisisafalsepositive.st |
+| VULN-S06 | No Invite Gate on /auth/signup | INFO | Confirmed | Anyone can register as MaaS operator |
+| VULN-S07 | HTTP 500 on null/typed login fields | MEDIUM | Confirmed | userId=null or array crashes Flask login handler |
 
 ### New IOCs
 

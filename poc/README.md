@@ -42,3 +42,10 @@ python3 poc_05_static_bypass.py
 # Query blockchain C2 domain
 python3 poc_06_blockchain_resolver.py
 ```
+
+## silentnet.st Scripts
+
+| File | VULN | Title | Impact |
+|---|---|---|---|
+| `poc_s01_silentnet_bruteforce.py` | VULN-S03 | No Rate Limiting on /auth/login | Brute force operator accounts |
+| `poc_s02_silentnet_login_crash.py` | VULN-S07 | Login Handler HTTP 500 Crash | DoS via null/typed fields |
