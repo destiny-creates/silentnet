@@ -982,3 +982,105 @@ See `poc/README.md` for full usage instructions and requirements.
 | 2026-07-20 19:28 | All 7 vulnerabilities documented |
 | 2026-07-20 19:28 | 6 POC scripts written |
 | 2026-07-20 19:32 | README and POC directory complete |
+
+---
+
+## silentnet.st — MaaS Operator Portal Analysis
+
+> **Scan date:** 2026-07-20 23:46–23:53 UTC  
+> **Status:** Active, publicly accessible, no IP allowlist
+
+### Infrastructure Comparison
+
+| Property | thisisafalsepositive.st | silentnet.st |
+|---|---|---|
+| IP | 185.178.208.191 | 185.178.208.165 |
+| Subnet | 185.178.208.0/24 | 185.178.208.0/24 |
+| WAF | DDoS-Guard | DDoS-Guard |
+| IP Allowlist | Yes (shard/*) | **None** |
+| Purpose | Victim data C2 | MaaS operator registration portal |
+| Panel accessible | No (IP blocked) | **Yes — fully public** |
+
+### Role Separation
+
+The two domains serve entirely different functions within the MaaS architecture:
+
+- **`thisisafalsepositive.st`** — Victim-facing C2. Receives stolen credentials from infected machines. Operators view their haul here. IP-allowlisted.
+- **`silentnet.st`** — Public MaaS marketplace. Threat actors register here to purchase stealer access. No IP restriction — intentionally public.
+
+### MaaS Registration Flow (fully recovered)
+
+```
+1.  Buyer visits /auth/signup
+2.  Provides their own Discord webhook URL
+3.  Browser POSTs {webhookUrl} to /internal/auth/webhookSignup
+4.  Server stores webhook, returns {state: "<oauth_token>"}
+5.  Browser redirects to Discord OAuth (client_id: 1521202685884235817)
+6.  Buyer authenticates with Discord (scope: identify only)
+7.  Discord redirects to /auth/discord?code=<code>&state=<token>
+8.  Server creates account, POSTs userId + accountKey to buyer's webhook
+9.  Buyer logs in at /auth/login with {userId, accountKey}
+```
+
+### Discord Application
+
+| Property | Value |
+|---|---|
+| App ID | `1521202685884235817` |
+| Name | `Login` (deliberately generic) |
+| Created | 2026-06-29 17:16:22 UTC (21 days before discovery) |
+| Icon hash | `5950919b040391f5a3047ca0656367c7` |
+| verify_key | `8f003be516de83b6b1de986e8ece1bf5f07331cb329a42d5f829f54fb59b1afb` |
+| OAuth scope | `identify` only |
+| Bot public | `true` |
+| Verified | `false` |
+
+### Route Map
+
+| Route | HTTP | Notes |
+|---|---|---|
+| `/auth/login` | 200 | Full login page — no IP restriction |
+| `/auth/discord` | 200 | Discord OAuth entry |
+| `/auth/signup` | 200 | **Public MaaS registration** |
+| `/dashboard/` | 200 | Serves login SPA shell |
+| `/dashboard/remote` | 200 | Serves login SPA shell |
+| `/dashboard/settings` | 200 | Serves login SPA shell |
+| `/dashboard/users` | 200 | Serves login SPA shell |
+| `/dashboard/victims` | 404 | Not yet implemented |
+| `/dashboard/logs` | 404 | Not yet implemented |
+| `/dashboard/builds` | 404 | Not yet implemented |
+| `/internal/auth/webhookSignup` | 405 GET / POST only | Operator signup backend |
+| `/static/*` | 200 | nginx bypass — no auth |
+
+### Static File Comparison vs thisisafalsepositive.st
+
+| File | Size | Hash Match | Notes |
+|---|---|---|---|
+| `dashboard.css` | 9,476B | **IDENTICAL** | Same codebase |
+| `app.js` | 5,038B | **IDENTICAL** | Same codebase |
+| `favicon.ico` | 270,622B | **IDENTICAL** | Same branding |
+| `style.css` | 38,210B | Different | Minor variation |
+| `auth.css` | 6,240B | Different | Minor variation |
+
+### silentnet.st Vulnerabilities
+
+| ID | Title | Severity | Notes |
+|---|---|---|---|
+| VULN-S01 | No Authentication on Admin Routes | HIGH | All /dashboard/* serve login SPA without session check |
+| VULN-S02 | SSRF via webhookSignup Endpoint | HIGH | User-supplied URL POSTed to by server |
+| VULN-S03 | No Rate Limiting on /auth/login | MEDIUM | JSON login, no CSRF, no visible throttling |
+| VULN-S04 | Open Redirect Risk via initialState | MEDIUM | Base64 state param controls post-OAuth redirect |
+| VULN-S05 | nginx Static File Exposure | MEDIUM | Same as VULN-04 on .191 |
+| VULN-S06 | No Invite Gate on /auth/signup | INFO | Anyone can register as a MaaS operator |
+
+### New IOCs
+
+| Indicator | Type | Description |
+|---|---|---|
+| `silentnet.st` | Domain | MaaS operator portal |
+| `185.178.208.165` | IP | Portal server |
+| `1521202685884235817` | Discord App ID | OAuth app, created 2026-06-29 |
+| `5950919b040391f5a3047ca0656367c7` | Discord Icon Hash | App branding |
+| `8f003be516de83b6b1de986e8ece1bf5f07331cb329a42d5f829f54fb59b1afb` | verify_key | Discord app verification key |
+| `/internal/auth/webhookSignup` | Endpoint | MaaS signup backend |
+| `accountKey` | Auth field | Operator credential field |
